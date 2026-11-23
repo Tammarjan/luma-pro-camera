@@ -2,6 +2,11 @@ package com.lumapro.camera
 
 import android.Manifest
 import android.hardware.camera2.CameraCharacteristics
+import android.content.Context
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
 import android.hardware.camera2.CaptureRequest
 import android.content.ContentValues
 import android.content.Intent
@@ -62,6 +67,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -71,6 +77,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -190,6 +197,8 @@ private fun LumaCameraScreen() {
     var flashAvailable by remember { mutableStateOf(false) }
     var flashEnabled by remember { mutableStateOf(false) }
     var gridEnabled by remember { mutableStateOf(false) }
+    var levelEnabled by remember { mutableStateOf(false) }
+    var rollDegrees by remember { mutableFloatStateOf(0f) }
     var rawJpegSupported by remember { mutableStateOf(false) }
     var rawCaptureEnabled by remember { mutableStateOf(false) }
     var manualSensorSupported by remember { mutableStateOf(false) }
@@ -206,6 +215,28 @@ private fun LumaCameraScreen() {
     var manualFocusEnabled by remember { mutableStateOf(false) }
     var supportedWbModes by remember { mutableStateOf(listOf(CaptureRequest.CONTROL_AWB_MODE_AUTO)) }
     var selectedWbMode by remember { mutableIntStateOf(CaptureRequest.CONTROL_AWB_MODE_AUTO) }
+
+    DisposableEffect(levelEnabled) {
+        if (!levelEnabled) {
+            onDispose { }
+        } else {
+            val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
+            val accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+            val listener = object : SensorEventListener {
+                override fun onSensorChanged(event: SensorEvent) {
+                    val x = event.values[0]
+                    val y = event.values[1]
+                    val measured = Math.toDegrees(kotlin.math.atan2(x.toDouble(), y.toDouble())).toFloat()
+                    rollDegrees = (rollDegrees * 0.82f) + (measured * 0.18f)
+                }
+                override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
+            }
+            if (accelerometer != null) {
+                sensorManager.registerListener(listener, accelerometer, SensorManager.SENSOR_DELAY_UI)
+            }
+            onDispose { sensorManager.unregisterListener(listener) }
+        }
+    }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -341,6 +372,18 @@ private fun LumaCameraScreen() {
                 }
             )
             if (gridEnabled) RuleOfThirdsGrid(Modifier.fillMaxSize())
+            if (levelEnabled) {
+                Canvas(
+                    modifier = Modifier.align(Alignment.Center).size(width = 150.dp, height = 36.dp)
+                ) {
+                    rotate(-rollDegrees, pivot = center) {
+                        val lineY = center.y
+                        drawLine(Color.White.copy(alpha = 0.9f), Offset(0f, lineY), Offset(size.width, lineY), 3.dp.toPx())
+                        drawCircle(Color.White, radius = 5.dp.toPx(), center = center)
+                        drawCircle(Color.Black, radius = 2.dp.toPx(), center = center)
+                    }
+                }
+            }
             if (showCaptureFlash) {
                 Box(modifier = Modifier.fillMaxSize().background(Color.White.copy(alpha = 0.72f)))
             }
@@ -596,6 +639,9 @@ private fun LumaCameraScreen() {
                 }
                 Button(onClick = { gridEnabled = !gridEnabled }) {
                     Text(if (gridEnabled) "Grid ON" else "Grid OFF")
+                }
+                Button(onClick = { levelEnabled = !levelEnabled }) {
+                    Text(if (levelEnabled) "Level ON" else "Level OFF")
                 }
             }
             Row(
