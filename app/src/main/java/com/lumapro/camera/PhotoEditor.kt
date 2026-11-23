@@ -58,6 +58,7 @@ internal fun PhotoEditorDialog(photoUri: Uri, onDismiss: () -> Unit) {
     var saving by remember { mutableStateOf(false) }
     var showOriginal by remember { mutableStateOf(false) }
     var selectedEditorLook by remember { mutableStateOf("Natural") }
+    var editorSection by remember { mutableStateOf(0) }
 
     LaunchedEffect(photoUri) {
         source = withContext(Dispatchers.IO) {
@@ -209,21 +210,36 @@ internal fun PhotoEditorDialog(photoUri: Uri, onDismiss: () -> Unit) {
                     FilterChip(selected = selectedEditorLook == "Cool", onClick = { selectedEditorLook = "Cool"; exposure = 0f; contrast = 1.05f; saturation = 1.08f; warmth = -0.4f; tint = 0f; vibrance = 0.05f }, label = { Text("Cool") })
                 }
                 if (processing) Text("Processing…", color = Color.LightGray)
-                EditorSlider("Exposure", exposure, -2f..2f, { exposure = it }, "%.1f EV".format(exposure))
-                EditorSlider("Contrast", contrast, 0f..2f, { contrast = it }, (contrast * 100).roundToInt().toString() + "%")
-                EditorSlider("Saturation", saturation, 0f..2f, { saturation = it }, (saturation * 100).roundToInt().toString() + "%")
-                EditorSlider("Highlights", highlights, -1f..1f, { highlights = it }, if (highlights >= 0) "−" + (highlights * 100).roundToInt() + "%" else "+" + (-highlights * 100).roundToInt() + "%")
-                EditorSlider("Shadows", shadows, -1f..1f, { shadows = it }, if (shadows >= 0) "+" + (shadows * 100).roundToInt() + "%" else "−" + (-shadows * 100).roundToInt() + "%")
-                EditorSlider("Whites", whites, -1f..1f, { whites = it }, if (whites >= 0) "+" + (whites * 100).roundToInt() + "%" else "−" + (-whites * 100).roundToInt() + "%")
-                EditorSlider("Blacks", blacks, -1f..1f, { blacks = it }, if (blacks >= 0) "+" + (blacks * 100).roundToInt() + "%" else "−" + (-blacks * 100).roundToInt() + "%")
-                EditorSlider("Clarity", clarity, -1f..1f, { clarity = it }, if (clarity >= 0) "+" + (clarity * 100).roundToInt() + "%" else "−" + (-clarity * 100).roundToInt() + "%")
-                EditorSlider("Texture", texture, -1f..1f, { texture = it }, if (texture >= 0) "+" + (texture * 100).roundToInt() + "%" else "−" + (-texture * 100).roundToInt() + "%")
-                EditorSlider("Sharpening", sharpening, 0f..1f, { sharpening = it }, (sharpening * 100).roundToInt().toString() + "%")
-                EditorSlider("Noise Reduction", noiseReduction, 0f..1f, { noiseReduction = it }, (noiseReduction * 100).roundToInt().toString() + "%")
-                EditorSlider("Vignette", vignette, 0f..1f, { vignette = it }, (vignette * 100).roundToInt().toString() + "%")
-                EditorSlider("Warmth", warmth, -1f..1f, { warmth = it }, if (warmth >= 0) "Warm +" + (warmth * 100).roundToInt() else "Cool " + (warmth * 100).roundToInt())
-                EditorSlider("Tint", tint, -1f..1f, { tint = it }, if (tint >= 0) "Magenta +" + (tint * 100).roundToInt() else "Green " + (tint * 100).roundToInt())
-                EditorSlider("Vibrance", vibrance, -1f..1f, { vibrance = it }, if (vibrance >= 0) "+" + (vibrance * 100).roundToInt() + "%" else (vibrance * 100).roundToInt().toString() + "%")
+                TabRow(selectedTabIndex = editorSection, containerColor = Color(0xFF171717), contentColor = Color(0xFFFFC107)) {
+                    listOf("LIGHT", "COLOR", "DETAIL", "EFFECTS").forEachIndexed { index, label ->
+                        Tab(selected = editorSection == index, onClick = { editorSection = index }, text = { Text(label, style = MaterialTheme.typography.labelSmall) })
+                    }
+                }
+                when (editorSection) {
+                    0 -> {
+                        EditorSlider("Exposure", exposure, -2f..2f, { exposure = it; selectedEditorLook = "Custom" }, "%.1f EV".format(exposure))
+                        EditorSlider("Contrast", contrast, 0f..2f, { contrast = it; selectedEditorLook = "Custom" }, (contrast * 100).roundToInt().toString() + "%")
+                        EditorSlider("Highlights", highlights, -1f..1f, { highlights = it; selectedEditorLook = "Custom" }, if (highlights >= 0) "−" + (highlights * 100).roundToInt() + "%" else "+" + (-highlights * 100).roundToInt() + "%")
+                        EditorSlider("Shadows", shadows, -1f..1f, { shadows = it; selectedEditorLook = "Custom" }, if (shadows >= 0) "+" + (shadows * 100).roundToInt() + "%" else "−" + (-shadows * 100).roundToInt() + "%")
+                        EditorSlider("Whites", whites, -1f..1f, { whites = it; selectedEditorLook = "Custom" }, if (whites >= 0) "+" + (whites * 100).roundToInt() + "%" else "−" + (-whites * 100).roundToInt() + "%")
+                        EditorSlider("Blacks", blacks, -1f..1f, { blacks = it; selectedEditorLook = "Custom" }, if (blacks >= 0) "+" + (blacks * 100).roundToInt() + "%" else "−" + (-blacks * 100).roundToInt() + "%")
+                    }
+                    1 -> {
+                        EditorSlider("Saturation", saturation, 0f..2f, { saturation = it; selectedEditorLook = "Custom" }, (saturation * 100).roundToInt().toString() + "%")
+                        EditorSlider("Vibrance", vibrance, -1f..1f, { vibrance = it; selectedEditorLook = "Custom" }, if (vibrance >= 0) "+" + (vibrance * 100).roundToInt() + "%" else (vibrance * 100).roundToInt().toString() + "%")
+                        EditorSlider("Warmth", warmth, -1f..1f, { warmth = it; selectedEditorLook = "Custom" }, if (warmth >= 0) "Warm +" + (warmth * 100).roundToInt() else "Cool " + (warmth * 100).roundToInt())
+                        EditorSlider("Tint", tint, -1f..1f, { tint = it; selectedEditorLook = "Custom" }, if (tint >= 0) "Magenta +" + (tint * 100).roundToInt() else "Green " + (tint * 100).roundToInt())
+                    }
+                    2 -> {
+                        EditorSlider("Texture", texture, -1f..1f, { texture = it; selectedEditorLook = "Custom" }, if (texture >= 0) "+" + (texture * 100).roundToInt() + "%" else "−" + (-texture * 100).roundToInt() + "%")
+                        EditorSlider("Clarity", clarity, -1f..1f, { clarity = it; selectedEditorLook = "Custom" }, if (clarity >= 0) "+" + (clarity * 100).roundToInt() + "%" else "−" + (-clarity * 100).roundToInt() + "%")
+                        EditorSlider("Sharpening", sharpening, 0f..1f, { sharpening = it; selectedEditorLook = "Custom" }, (sharpening * 100).roundToInt().toString() + "%")
+                        EditorSlider("Noise Reduction", noiseReduction, 0f..1f, { noiseReduction = it; selectedEditorLook = "Custom" }, (noiseReduction * 100).roundToInt().toString() + "%")
+                    }
+                    else -> {
+                        EditorSlider("Vignette", vignette, 0f..1f, { vignette = it; selectedEditorLook = "Custom" }, (vignette * 100).roundToInt().toString() + "%")
+                    }
+                }
                 Text("Original photo remains unchanged. Edited copy is saved separately.", color = Color.LightGray, style = MaterialTheme.typography.bodySmall)
             }
         },
