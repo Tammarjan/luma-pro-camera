@@ -170,6 +170,7 @@ private fun LumaCameraScreen() {
     var imageCapture by remember { mutableStateOf<ImageCapture?>(null) }
     var camera by remember { mutableStateOf<Camera?>(null) }
     var isCapturing by remember { mutableStateOf(false) }
+    var showCaptureFlash by remember { mutableStateOf(false) }
     var captureTimerSeconds by remember { mutableIntStateOf(0) }
     var jpegQuality by remember { mutableIntStateOf(95) }
     var maximizeQuality by remember { mutableStateOf(true) }
@@ -225,6 +226,13 @@ private fun LumaCameraScreen() {
                     saveRawAndJpeg = rawCaptureEnabled && rawJpegSupported,
                     onComplete = { success ->
                         isCapturing = false
+                        if (success) {
+                            showCaptureFlash = true
+                            cameraScope.launch {
+                                delay(110)
+                                showCaptureFlash = false
+                            }
+                        }
                         haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                         Toast.makeText(
                             context,
@@ -329,6 +337,9 @@ private fun LumaCameraScreen() {
                 }
             )
             if (gridEnabled) RuleOfThirdsGrid(Modifier.fillMaxSize())
+            if (showCaptureFlash) {
+                Box(modifier = Modifier.fillMaxSize().background(Color.White.copy(alpha = 0.72f)))
+            }
         } else {
             Column(
                 modifier = Modifier.align(Alignment.Center).padding(24.dp),
