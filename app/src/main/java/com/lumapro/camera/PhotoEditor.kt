@@ -100,6 +100,8 @@ internal fun PhotoEditorDialog(photoUri: Uri, onDismiss: () -> Unit) {
             fun pixelLuma(pixel: Int): Float = 0.2126f * ((pixel shr 16) and 0xFF) + 0.7152f * ((pixel shr 8) and 0xFF) + 0.0722f * (pixel and 0xFF)
             for (i in pixels.indices) {
                 val color = pixels[i]
+                val x = i % width
+                val y = i / width
                 val a = (color ushr 24) and 0xFF
                 var r = ((color shr 16) and 0xFF).toFloat() * gain
                 var g = ((color shr 8) and 0xFF).toFloat() * gain
@@ -126,8 +128,6 @@ internal fun PhotoEditorDialog(photoUri: Uri, onDismiss: () -> Unit) {
                 val whiteMask = normalizedLuma.pow(1.5f)
                 val blackMask = (1f - normalizedLuma).pow(1.5f)
                 val whiteBlackAdjustment = (whiteMask * whites + blackMask * blacks) * 68f
-                val x = i % width
-                val y = i / width
                 fun sampleLuma(sx: Int, sy: Int): Float = pixelLuma(sourcePixels[sy.coerceIn(0, height - 1) * width + sx.coerceIn(0, width - 1)])
                 val textureAverage = (sampleLuma(x - 2, y) + sampleLuma(x + 2, y) + sampleLuma(x, y - 2) + sampleLuma(x, y + 2)) * 0.25f
                 val clarityAverage = (sampleLuma(x - 7, y) + sampleLuma(x + 7, y) + sampleLuma(x, y - 7) + sampleLuma(x, y + 7)) * 0.25f
