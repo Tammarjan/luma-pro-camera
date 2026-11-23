@@ -104,6 +104,7 @@ private data class GalleryPhoto(val uri: Uri, val name: String)
 private fun LumaCameraScreen() {
     val context = LocalContext.current
     var showGallery by remember { mutableStateOf(false) }
+    var showProSettings by remember { mutableStateOf(false) }
     var galleryPhotos by remember { mutableStateOf<List<GalleryPhoto>>(emptyList()) }
     var selectedPhoto by remember { mutableStateOf<GalleryPhoto?>(null) }
     var selectedPhotoUris by remember { mutableStateOf<Set<String>>(emptySet()) }
@@ -320,152 +321,165 @@ private fun LumaCameraScreen() {
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("EXPOSURE", color = Color.White, style = MaterialTheme.typography.labelMedium)
-                Text(
-                    "EV ${if (exposureIndex > 0) "+" else ""}$exposureIndex",
-                    color = Color.White,
-                    style = MaterialTheme.typography.labelMedium
-                )
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("JPEG QUALITY", color = Color.White, style = MaterialTheme.typography.labelMedium)
-                Text("$jpegQuality%", color = Color.White, style = MaterialTheme.typography.labelMedium)
-            }
-            Slider(
-                value = jpegQuality.toFloat(),
-                onValueChange = { jpegQuality = it.roundToInt().coerceIn(70, 100) },
-                valueRange = 70f..100f,
-                steps = 29,
-                enabled = !isCapturing
-            )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("ASPECT RATIO", color = Color.White, style = MaterialTheme.typography.labelMedium)
-                Button(onClick = { aspectRatioWide = !aspectRatioWide }, enabled = !isCapturing) {
-                    Text(if (aspectRatioWide) "16:9" else "4:3")
+                Text("CAMERA CONTROLS", color = Color.White, style = MaterialTheme.typography.titleSmall)
+                Button(onClick = { showProSettings = !showProSettings }) {
+                    Text(if (showProSettings) "Hide Pro Settings" else "Pro Settings")
                 }
             }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("CAPTURE PRIORITY", color = Color.White, style = MaterialTheme.typography.labelMedium)
-                Button(onClick = { maximizeQuality = !maximizeQuality }, enabled = !isCapturing) {
-                    Text(if (maximizeQuality) "Quality" else "Speed")
-                }
-            }
-            if (exposureMax > exposureMin) {
-                Slider(
-                    value = exposureIndex.toFloat().coerceIn(exposureMin.toFloat(), exposureMax.toFloat()),
-                    onValueChange = { value ->
-                        val next = value.roundToInt().coerceIn(exposureMin, exposureMax)
-                        exposureIndex = next
-                        camera?.cameraControl?.setExposureCompensationIndex(next)
-                    },
-                    valueRange = exposureMin.toFloat()..exposureMax.toFloat(),
-                    steps = (exposureMax - exposureMin - 1).coerceAtLeast(0),
-                    enabled = camera != null && !manualExposureEnabled
-                )
-            } else {
-                Text("Exposure adjustment unavailable on this camera", color = Color.LightGray)
-            }
-            if (manualSensorSupported) {
+            if (showProSettings) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("MANUAL ISO / SHUTTER", color = Color.White, style = MaterialTheme.typography.labelMedium)
-                    Button(onClick = {
-                        manualExposureEnabled = !manualExposureEnabled
-                        setManualExposure(camera, manualExposureEnabled, isoValue, shutterValueNs)
-                    }) { Text(if (manualExposureEnabled) "MANUAL ON" else "AUTO") }
-                }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("ISO $isoValue", color = Color.White, modifier = Modifier.weight(1f))
-                    Slider(
-                        modifier = Modifier.weight(2f),
-                        value = isoValue.toFloat(),
-                        onValueChange = {
-                            isoValue = it.roundToInt().coerceIn(isoMin, isoMax)
-                            if (manualExposureEnabled) setManualExposure(camera, true, isoValue, shutterValueNs)
-                        },
-                        valueRange = isoMin.toFloat()..isoMax.toFloat(),
-                        enabled = manualExposureEnabled && isoMax > isoMin
-                    )
-                }
-                val shutterFraction = shutterToFraction(shutterValueNs, shutterMinNs, shutterMaxNs)
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Shutter 1/${(1_000_000_000.0 / shutterValueNs).roundToInt()}s", color = Color.White, modifier = Modifier.weight(1f))
-                    Slider(
-                        modifier = Modifier.weight(2f),
-                        value = shutterFraction,
-                        onValueChange = {
-                            shutterValueNs = fractionToShutter(it, shutterMinNs, shutterMaxNs)
-                            if (manualExposureEnabled) setManualExposure(camera, true, isoValue, shutterValueNs)
-                        },
-                        valueRange = 0f..1f,
-                        enabled = manualExposureEnabled && shutterMaxNs > shutterMinNs
-                    )
-                }
-            } else {
-                Text("Manual ISO / shutter not supported by this camera", color = Color.LightGray, style = MaterialTheme.typography.labelSmall)
-            }
-            if (manualFocusSupported) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
+                    Text("EXPOSURE", color = Color.White, style = MaterialTheme.typography.labelMedium)
                     Text(
-                        if (manualFocusEnabled) "MANUAL FOCUS" else "FOCUS AUTO",
+                        "EV ${if (exposureIndex > 0) "+" else ""}$exposureIndex",
                         color = Color.White,
                         style = MaterialTheme.typography.labelMedium
                     )
-                    Button(onClick = {
-                        manualFocusEnabled = !manualFocusEnabled
-                        if (manualFocusEnabled) {
-                            setManualFocus(camera, focusDistance)
-                        } else {
-                            setAutoFocus(camera)
-                            focusDistance = 0f
-                        }
-                    }) { Text(if (manualFocusEnabled) "AUTO FOCUS" else "MANUAL") }
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("JPEG QUALITY", color = Color.White, style = MaterialTheme.typography.labelMedium)
+                    Text("$jpegQuality%", color = Color.White, style = MaterialTheme.typography.labelMedium)
                 }
                 Slider(
-                    value = focusDistance.coerceIn(0f, focusDistanceMax),
-                    onValueChange = {
-                        focusDistance = it
-                        if (manualFocusEnabled) setManualFocus(camera, it)
-                    },
-                    valueRange = 0f..focusDistanceMax,
-                    enabled = manualFocusEnabled && focusDistanceMax > 0f
+                    value = jpegQuality.toFloat(),
+                    onValueChange = { jpegQuality = it.roundToInt().coerceIn(70, 100) },
+                    valueRange = 70f..100f,
+                    steps = 29,
+                    enabled = !isCapturing
                 )
-            } else {
-                Text("Manual focus unavailable on this camera", color = Color.LightGray, style = MaterialTheme.typography.labelSmall)
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("WHITE BALANCE", color = Color.White, style = MaterialTheme.typography.labelMedium)
-                Button(onClick = {
-                    val modes = supportedWbModes
-                    val current = modes.indexOf(selectedWbMode).coerceAtLeast(0)
-                    selectedWbMode = modes[(current + 1) % modes.size]
-                    setWhiteBalance(camera, selectedWbMode)
-                }, enabled = camera != null) {
-                    Text(whiteBalanceName(selectedWbMode))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("ASPECT RATIO", color = Color.White, style = MaterialTheme.typography.labelMedium)
+                    Button(onClick = { aspectRatioWide = !aspectRatioWide }, enabled = !isCapturing) {
+                        Text(if (aspectRatioWide) "16:9" else "4:3")
+                    }
                 }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("CAPTURE PRIORITY", color = Color.White, style = MaterialTheme.typography.labelMedium)
+                    Button(onClick = { maximizeQuality = !maximizeQuality }, enabled = !isCapturing) {
+                        Text(if (maximizeQuality) "Quality" else "Speed")
+                    }
+                }
+                if (exposureMax > exposureMin) {
+                    Slider(
+                        value = exposureIndex.toFloat().coerceIn(exposureMin.toFloat(), exposureMax.toFloat()),
+                        onValueChange = { value ->
+                            val next = value.roundToInt().coerceIn(exposureMin, exposureMax)
+                            exposureIndex = next
+                            camera?.cameraControl?.setExposureCompensationIndex(next)
+                        },
+                        valueRange = exposureMin.toFloat()..exposureMax.toFloat(),
+                        steps = (exposureMax - exposureMin - 1).coerceAtLeast(0),
+                        enabled = camera != null && !manualExposureEnabled
+                    )
+                } else {
+                    Text("Exposure adjustment unavailable on this camera", color = Color.LightGray)
+                }
+                if (manualSensorSupported) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("MANUAL ISO / SHUTTER", color = Color.White, style = MaterialTheme.typography.labelMedium)
+                        Button(onClick = {
+                            manualExposureEnabled = !manualExposureEnabled
+                            setManualExposure(camera, manualExposureEnabled, isoValue, shutterValueNs)
+                        }) { Text(if (manualExposureEnabled) "MANUAL ON" else "AUTO") }
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("ISO $isoValue", color = Color.White, modifier = Modifier.weight(1f))
+                        Slider(
+                            modifier = Modifier.weight(2f),
+                            value = isoValue.toFloat(),
+                            onValueChange = {
+                                isoValue = it.roundToInt().coerceIn(isoMin, isoMax)
+                                if (manualExposureEnabled) setManualExposure(camera, true, isoValue, shutterValueNs)
+                            },
+                            valueRange = isoMin.toFloat()..isoMax.toFloat(),
+                            enabled = manualExposureEnabled && isoMax > isoMin
+                        )
+                    }
+                    val shutterFraction = shutterToFraction(shutterValueNs, shutterMinNs, shutterMaxNs)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Shutter 1/${(1_000_000_000.0 / shutterValueNs).roundToInt()}s", color = Color.White, modifier = Modifier.weight(1f))
+                        Slider(
+                            modifier = Modifier.weight(2f),
+                            value = shutterFraction,
+                            onValueChange = {
+                                shutterValueNs = fractionToShutter(it, shutterMinNs, shutterMaxNs)
+                                if (manualExposureEnabled) setManualExposure(camera, true, isoValue, shutterValueNs)
+                            },
+                            valueRange = 0f..1f,
+                            enabled = manualExposureEnabled && shutterMaxNs > shutterMinNs
+                        )
+                    }
+                } else {
+                    Text("Manual ISO / shutter not supported by this camera", color = Color.LightGray, style = MaterialTheme.typography.labelSmall)
+                }
+                if (manualFocusSupported) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            if (manualFocusEnabled) "MANUAL FOCUS" else "FOCUS AUTO",
+                            color = Color.White,
+                            style = MaterialTheme.typography.labelMedium
+                        )
+                        Button(onClick = {
+                            manualFocusEnabled = !manualFocusEnabled
+                            if (manualFocusEnabled) {
+                                setManualFocus(camera, focusDistance)
+                            } else {
+                                setAutoFocus(camera)
+                                focusDistance = 0f
+                            }
+                        }) { Text(if (manualFocusEnabled) "AUTO FOCUS" else "MANUAL") }
+                    }
+                    Slider(
+                        value = focusDistance.coerceIn(0f, focusDistanceMax),
+                        onValueChange = {
+                            focusDistance = it
+                            if (manualFocusEnabled) setManualFocus(camera, it)
+                        },
+                        valueRange = 0f..focusDistanceMax,
+                        enabled = manualFocusEnabled && focusDistanceMax > 0f
+                    )
+                } else {
+                    Text("Manual focus unavailable on this camera", color = Color.LightGray, style = MaterialTheme.typography.labelSmall)
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("WHITE BALANCE", color = Color.White, style = MaterialTheme.typography.labelMedium)
+                    Button(onClick = {
+                        val modes = supportedWbModes
+                        val current = modes.indexOf(selectedWbMode).coerceAtLeast(0)
+                        selectedWbMode = modes[(current + 1) % modes.size]
+                        setWhiteBalance(camera, selectedWbMode)
+                    }, enabled = camera != null) {
+                        Text(whiteBalanceName(selectedWbMode))
+                    }
+                }
+    
             }
             Row(
                 modifier = Modifier.fillMaxWidth(),
