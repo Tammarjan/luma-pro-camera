@@ -93,6 +93,8 @@ private fun LumaCameraScreen() {
     var exposureMax by remember { mutableIntStateOf(0) }
     var exposureIndex by remember { mutableIntStateOf(0) }
     var zoomRatio by remember { mutableStateOf(1f) }
+    var flashAvailable by remember { mutableStateOf(false) }
+    var flashEnabled by remember { mutableStateOf(false) }
     var manualSensorSupported by remember { mutableStateOf(false) }
     var manualExposureEnabled by remember { mutableStateOf(false) }
     var isoMin by remember { mutableIntStateOf(100) }
@@ -125,6 +127,9 @@ private fun LumaCameraScreen() {
                     manualFocusEnabled = false
                     manualFocusSupported = false
                     if (readyCamera != null) {
+                        flashAvailable = readyCamera.cameraInfo.hasFlashUnit()
+                        flashEnabled = false
+                        readyCapture?.flashMode = ImageCapture.FLASH_MODE_OFF
                         val range = readyCamera.cameraInfo.exposureState.exposureCompensationRange
                         exposureMin = range.lower
                         exposureMax = range.upper
@@ -325,6 +330,26 @@ private fun LumaCameraScreen() {
                 }, enabled = camera != null) {
                     Text(whiteBalanceName(selectedWbMode))
                 }
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Button(
+                    onClick = {
+                        flashEnabled = !flashEnabled
+                        imageCapture?.flashMode = if (flashEnabled) {
+                            ImageCapture.FLASH_MODE_ON
+                        } else {
+                            ImageCapture.FLASH_MODE_OFF
+                        }
+                    },
+                    enabled = flashAvailable && imageCapture != null
+                ) {
+                    Text(if (!flashAvailable) "Flash N/A" else if (flashEnabled) "Flash ON" else "Flash OFF")
+                }
+                Text("Tap focus is next", color = Color.LightGray, style = MaterialTheme.typography.labelSmall)
             }
             Row(
                 modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp),
