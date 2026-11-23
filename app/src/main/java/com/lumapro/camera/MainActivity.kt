@@ -32,6 +32,14 @@ import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
 import androidx.camera.core.FocusMeteringAction
 import androidx.camera.core.Preview
+import androidx.camera.video.VideoCapture
+import androidx.camera.video.Recorder
+import androidx.camera.video.Quality
+import androidx.camera.video.QualitySelector
+import androidx.camera.video.FallbackStrategy
+import androidx.camera.video.Recording
+import androidx.camera.video.MediaStoreOutputOptions
+import androidx.camera.video.VideoRecordEvent
 import androidx.camera.core.resolutionselector.AspectRatioStrategy
 import androidx.camera.core.resolutionselector.ResolutionSelector
 import androidx.camera.lifecycle.ProcessCameraProvider
@@ -180,6 +188,11 @@ private fun LumaCameraScreen() {
         )
     }
     var imageCapture by remember { mutableStateOf<ImageCapture?>(null) }
+    var videoCapture by remember { mutableStateOf<VideoCapture<Recorder>?>(null) }
+    var activeRecording by remember { mutableStateOf<Recording?>(null) }
+    var videoMode by remember { mutableStateOf(false) }
+    var isRecordingVideo by remember { mutableStateOf(false) }
+    var recordingSeconds by remember { mutableIntStateOf(0) }
     var camera by remember { mutableStateOf<Camera?>(null) }
     var isCapturing by remember { mutableStateOf(false) }
     var showCaptureFlash by remember { mutableStateOf(false) }
@@ -189,6 +202,7 @@ private fun LumaCameraScreen() {
     var aspectRatioWide by remember { mutableStateOf(false) }
     var timerCountdown by remember { mutableIntStateOf(0) }
     val cameraScope = androidx.compose.runtime.rememberCoroutineScope()
+    LaunchedEffect(isRecordingVideo) { if (isRecordingVideo) { recordingSeconds = 0; while (isRecordingVideo) { delay(1000); recordingSeconds += 1 } } else recordingSeconds = 0 }
     var lensFacing by remember { mutableIntStateOf(CameraSelector.LENS_FACING_BACK) }
     var exposureMin by remember { mutableIntStateOf(0) }
     var exposureMax by remember { mutableIntStateOf(0) }
@@ -305,9 +319,10 @@ private fun LumaCameraScreen() {
                 aspectRatioWide = aspectRatioWide,
                 analysisEnabled = histogramEnabled || zebraEnabled || peakingEnabled,
                 onAnalysis = { bins, clipping, zebras, peaks -> liveHistogram = bins; highlightClipping = clipping; zebraPoints = zebras; peakingPoints = peaks },
-                onCameraReady = { readyCamera, readyCapture ->
+                onCameraReady = { readyCamera, readyCapture, readyVideoCapture ->
                     camera = readyCamera
                     imageCapture = readyCapture
+                    videoCapture = readyVideoCapture
                     manualExposureEnabled = false
                     manualSensorSupported = false
                     manualFocusEnabled = false
@@ -700,6 +715,12 @@ private fun LumaCameraScreen() {
                     enabled = camera != null
                 )
             }
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+                Button(onClick = { if (!isRecordingVideo) videoMode = false }, enabled = !isRecordingVideo) { Text(if (videoMode) "PHOTO" else "PHOTO MODE") }
+                Spacer(Modifier.size(10.dp))
+                Button(onClick = { if (!isRecordingVideo) videoMode = true }, enabled = !isRecordingVideo) { Text(if (videoMode) "VIDEO MODE" else "VIDEO") }
+                if (videoMode) Text("  •  4K when supported", color = Color.LightGray, style = MaterialTheme.typography.labelSmall)
+            }
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceEvenly,
@@ -718,17 +739,36 @@ private fun LumaCameraScreen() {
 
                 Button(
                     modifier = Modifier.size(84.dp),
-                    enabled = imageCapture != null && !isCapturing,
+                    enabled = if (videoMode) videoCapture != null else imageCapture != null && !isCapturing && !isRecordingVideo,
                     shape = CircleShape,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color.White,
-                        contentColor = Color.Black,
-                        disabledContainerColor = Color.Gray
-                    ),
-                    onClick = { performCapture() }
-                ) {
-                    Text(if (timerCountdown > 0) timerCountdown.toString() else if (isCapturing) "…" else "●")
-                }
+                    colors = ButtonDefaults.buttonColors(containerColor = if (isRecordingVideo) Color.Red else Color.White, contentColor = if (isRecordingVideo) Color.White else Color.Black, disabledContainerColor = Color.Gray),
+                    onClick = {
+                        if (!videoMode) performCapture()
+                        else if (isRecordingVideo) { activeRecording?.stop(); activeRecording = null }
+                        else {
+                            val useCase = videoCapture ?: return@Button
+                            val name = "Luma_Video_" + SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date()) + ".mp4"
+                            val values = ContentValues().apply {
+                                put(MediaStore.Video.Media.DISPLAY_NAME, name)
+                                put(MediaStore.Video.Media.MIME_TYPE, "video/mp4")
+                                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) put(MediaStore.Video.Media.RELATIVE_PATH, "Movies/Luma Pro Camera")
+                            }
+                            val output = MediaStoreOutputOptions.Builder(context.contentResolver, MediaStore.Video.Media.EXTERNAL_CONTENT_URI).setContentValues(values).build()
+                            runCatching {
+                                activeRecording = useCase.output.prepareRecording(context, output).start(ContextCompat.getMainExecutor(context)) { event ->
+                                    when (event) {
+                                        is VideoRecordEvent.Start -> isRecordingVideo = true
+                                        is VideoRecordEvent.Finalize -> {
+                                            isRecordingVideo = false
+                                            activeRecording = null
+                                            Toast.makeText(context, if (!event.hasError()) "Video saved to Movies/Luma Pro Camera" else "Video recording failed", Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
+                                }
+                            }.onFailure { isRecordingVideo = false; Toast.makeText(context, "Unable to start video", Toast.LENGTH_SHORT).show() }
+                        }
+                    }
+                ) { Text(if (videoMode) if (isRecordingVideo) "■" else "●" else if (timerCountdown > 0) timerCountdown.toString() else if (isCapturing) "…" else "●") }
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Button(
                         onClick = {
@@ -1116,7 +1156,7 @@ private fun CameraPreview(
     aspectRatioWide: Boolean,
     analysisEnabled: Boolean,
     onAnalysis: (List<Float>, Float, List<Offset>, List<Offset>) -> Unit,
-    onCameraReady: (Camera?, ImageCapture?) -> Unit,
+    onCameraReady: (Camera?, ImageCapture?, VideoCapture<Recorder>?) -> Unit,
     onTapFocus: () -> Unit,
     onRawCapabilityChanged: (Boolean) -> Unit
 ) {
@@ -1180,6 +1220,8 @@ private fun CameraPreview(
                     captureBuilder.setOutputFormat(ImageCapture.OUTPUT_FORMAT_RAW_JPEG)
                 }
                 val capture = captureBuilder.build()
+                val recorder = Recorder.Builder().setQualitySelector(QualitySelector.from(Quality.UHD, FallbackStrategy.lowerQualityOrHigherThan(Quality.FHD))).build()
+                val video = VideoCapture.withOutput(recorder)
 
                 cameraProvider.unbindAll()
                 if (analysisEnabled) {
@@ -1241,7 +1283,7 @@ private fun CameraPreview(
                     }
                     try {
                         boundCamera = cameraProvider.bindToLifecycle(
-                            lifecycleOwner, selector, preview, capture, analysis
+                            lifecycleOwner, selector, preview, capture, video, video, analysis
                         )
                     } catch (_: Exception) {
                         analysis.clearAnalyzer()
@@ -1256,10 +1298,10 @@ private fun CameraPreview(
                     )
                     onAnalysis(List(32) { 0f }, 0f, emptyList(), emptyList())
                 }
-                onCameraReady(boundCamera, capture)
+                onCameraReady(boundCamera, capture, video)
                 onRawCapabilityChanged(supportsRawJpeg)
             } catch (_: Exception) {
-                onCameraReady(null, null)
+                onCameraReady(null, null, null)
             }
         }, executor)
 
