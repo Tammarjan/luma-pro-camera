@@ -38,6 +38,8 @@ internal fun PhotoEditorDialog(photoUri: Uri, onDismiss: () -> Unit) {
     var contrast by remember(photoUri) { mutableFloatStateOf(1f) }
     var saturation by remember(photoUri) { mutableFloatStateOf(1f) }
     var warmth by remember(photoUri) { mutableFloatStateOf(0f) }
+    var highlights by remember(photoUri) { mutableFloatStateOf(0f) }
+    var shadows by remember(photoUri) { mutableFloatStateOf(0f) }
     var processing by remember { mutableStateOf(false) }
     var saving by remember { mutableStateOf(false) }
 
@@ -53,7 +55,7 @@ internal fun PhotoEditorDialog(photoUri: Uri, onDismiss: () -> Unit) {
         edited = source
     }
 
-    LaunchedEffect(source, exposure, contrast, saturation, warmth) {
+    LaunchedEffect(source, exposure, contrast, saturation, warmth, highlights, shadows) {
         val original = source ?: return@LaunchedEffect
         delay(100)
         processing = true
@@ -62,12 +64,22 @@ internal fun PhotoEditorDialog(photoUri: Uri, onDismiss: () -> Unit) {
             val pixels = IntArray(original.width * original.height)
             original.getPixels(pixels, 0, original.width, 0, 0, original.width, original.height)
             val gain = 2.0.pow(exposure.toDouble()).toFloat()
+            val highlightAmount = highlights
+            val shadowAmount = shadows
             for (i in pixels.indices) {
                 val color = pixels[i]
                 val a = (color ushr 24) and 0xFF
                 var r = ((color shr 16) and 0xFF).toFloat() * gain
                 var g = ((color shr 8) and 0xFF).toFloat() * gain
                 var b = (color and 0xFF).toFloat() * gain
+                val initialLuma = (0.2126f * r + 0.7152f * g + 0.0722f * b).coerceIn(0f, 255f)
+                val normalizedLuma = initialLuma / 255f
+                val shadowMask = (1f - normalizedLuma).pow(2)
+                val highlightMask = normalizedLuma.pow(2)
+                val toneAdjustment = (shadowMask * shadowAmount - highlightMask * highlightAmount) * 72f
+                r += toneAdjustment
+                g += toneAdjustment
+                b += toneAdjustment
                 r = (r - 128f) * contrast + 128f + warmth * 24f
                 g = (g - 128f) * contrast + 128f
                 b = (b - 128f) * contrast + 128f - warmth * 24f
@@ -98,6 +110,8 @@ internal fun PhotoEditorDialog(photoUri: Uri, onDismiss: () -> Unit) {
                 EditorSlider("Exposure", exposure, -2f..2f, { exposure = it }, "%.1f EV".format(exposure))
                 EditorSlider("Contrast", contrast, 0f..2f, { contrast = it }, (contrast * 100).roundToInt().toString() + "%")
                 EditorSlider("Saturation", saturation, 0f..2f, { saturation = it }, (saturation * 100).roundToInt().toString() + "%")
+                EditorSlider("Highlights", highlights, -1f..1f, { highlights = it }, if (highlights >= 0) "−" + (highlights * 100).roundToInt() + "%" else "+" + (-highlights * 100).roundToInt() + "%")
+                EditorSlider("Shadows", shadows, -1f..1f, { shadows = it }, if (shadows >= 0) "+" + (shadows * 100).roundToInt() + "%" else "−" + (-shadows * 100).roundToInt() + "%")
                 EditorSlider("Warmth", warmth, -1f..1f, { warmth = it }, if (warmth >= 0) "Warm +" + (warmth * 100).roundToInt() else "Cool " + (warmth * 100).roundToInt())
                 Text("Original photo remains unchanged. Edited copy is saved separately.", color = Color.LightGray, style = MaterialTheme.typography.bodySmall)
             }
