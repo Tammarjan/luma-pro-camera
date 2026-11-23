@@ -7,6 +7,9 @@ A native Android camera project focused on professional capture and a consistent
 - Native Kotlin + Jetpack Compose Android app.
 - CameraX live rear-camera preview.
 - JPEG still-photo capture using the highest-quality CameraX capture mode.
+- Rear/front camera switching where both lenses are available.
+- Exposure compensation control with per-camera range detection and graceful fallback when unsupported.
+- 1× and 2× zoom presets, capped to the selected camera's reported zoom capability.
 - Captures are saved to the device's Pictures/Luma Pro Camera gallery folder on Android versions that support relative media paths.
 - Device-aware feature detection, manual controls, GPU color grading, DNG/RAW and HEIF are planned next milestones.
 
