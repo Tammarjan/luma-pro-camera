@@ -620,7 +620,7 @@ private fun LumaCameraScreen() {
                         Slider(value = liveBrightness, onValueChange = { liveBrightness = it }, valueRange = -1f..1f)
                         Text("LIVE CONTRAST  ${(liveContrast * 100).roundToInt()}%", color = Color.White, style = MaterialTheme.typography.labelSmall)
                         Slider(value = liveContrast, onValueChange = { liveContrast = it }, valueRange = -1f..1f)
-                        Text("Live preview/video only — still photo effects are not connected yet.", color = Color(0xFFFFD54F), style = MaterialTheme.typography.labelSmall)
+                        Text(if (rawCaptureEnabled && rawJpegSupported) "Live preview/video effects; RAW capture stays unprocessed." else "Live effects apply to preview, video and JPEG capture.", color = Color(0xFFFFD54F), style = MaterialTheme.typography.labelSmall)
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                             Text("Capture timer", color = Color.White, style = MaterialTheme.typography.labelSmall)
                             Text(if (captureTimerSeconds == 0) "Off" else "${captureTimerSeconds}s", color = Color.LightGray, style = MaterialTheme.typography.labelSmall)
@@ -1112,7 +1112,12 @@ private fun CameraPreview(
         val analysisExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
         val effectExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
         val media3Effect = runCatching {
-            Media3Effect(context, CameraEffect.PREVIEW or CameraEffect.VIDEO_CAPTURE, effectExecutor) { error ->
+            Media3Effect(
+                context,
+                CameraEffect.PREVIEW or CameraEffect.VIDEO_CAPTURE or
+                    if (rawCaptureEnabled) 0 else CameraEffect.IMAGE_CAPTURE,
+                effectExecutor
+            ) { error ->
                 android.util.Log.e("LumaProCamera", "Live GPU effect failed", error)
             }.also { it.setEffects(listOf(Brightness(liveBrightness), Contrast(liveContrast))) }
         }.getOrNull()
