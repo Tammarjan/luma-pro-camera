@@ -151,6 +151,7 @@ private fun LumaCameraScreen() {
     var showGallery by remember { mutableStateOf(false) }
     var editingPhoto by remember { mutableStateOf<GalleryPhoto?>(null) }
     var cameraPanelTab by remember { mutableIntStateOf(0) }
+    var showFeaturePanel by remember { mutableStateOf(true) }
     var galleryPhotos by remember { mutableStateOf<List<GalleryPhoto>>(emptyList()) }
     var selectedPhoto by remember { mutableStateOf<GalleryPhoto?>(null) }
     var selectedPhotoUris by remember { mutableStateOf<Set<String>>(emptySet()) }
@@ -607,7 +608,13 @@ private fun LumaCameraScreen() {
                 }
             }
 
-            Row(Modifier.fillMaxWidth().padding(top = 5.dp, bottom = 5.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(Modifier.fillMaxWidth().padding(top = 5.dp, bottom = 5.dp), horizontalArrangement = Arrangement.End) {
+                QuickCameraChip(if (showFeaturePanel) "HIDE CONTROLS ▲" else "SHOW CONTROLS ▼", true) {
+                    showFeaturePanel = !showFeaturePanel
+                }
+            }
+            if (showFeaturePanel) {
+            Row(Modifier.fillMaxWidth().padding(top = 2.dp, bottom = 5.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 listOf("ADJUST", "PRO", "TOOLS").forEachIndexed { index, label ->
                     val selected = cameraPanelTab == index
                     Surface(modifier = Modifier.weight(1f).clickable { cameraPanelTab = index },
@@ -719,6 +726,7 @@ private fun LumaCameraScreen() {
                         }
                     }
                 }
+            }
             }
         }
         if (!hasPermission) {
