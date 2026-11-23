@@ -11,6 +11,7 @@ import android.os.Build
 import android.provider.MediaStore
 import android.widget.Toast
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -200,13 +201,13 @@ internal fun PhotoEditorDialog(photoUri: Uri, onDismiss: () -> Unit) {
                     }, modifier = Modifier.weight(1f)) { Text("Reset") }
                 }
                 if (preview != null) Image(preview.asImageBitmap(), if (showOriginal) "Original photo preview" else "Edited photo preview", Modifier.fillMaxWidth().heightIn(max = 300.dp), contentScale = androidx.compose.ui.layout.ContentScale.Fit)
+                else Box(Modifier.fillMaxWidth().height(180.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
                 Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     FilterChip(selected = selectedEditorLook == "Natural", onClick = { selectedEditorLook = "Natural"; exposure = 0f; contrast = 1f; saturation = 1f; warmth = 0f; tint = 0f; vibrance = 0f }, label = { Text("Natural") })
                     FilterChip(selected = selectedEditorLook == "Vivid", onClick = { selectedEditorLook = "Vivid"; exposure = 0f; contrast = 1.12f; saturation = 1.28f; warmth = 0f; tint = 0f; vibrance = 0.2f }, label = { Text("Vivid") })
                     FilterChip(selected = selectedEditorLook == "Warm", onClick = { selectedEditorLook = "Warm"; exposure = 0f; contrast = 1.05f; saturation = 1.08f; warmth = 0.4f; tint = 0.03f; vibrance = 0.05f }, label = { Text("Warm") })
                     FilterChip(selected = selectedEditorLook == "Cool", onClick = { selectedEditorLook = "Cool"; exposure = 0f; contrast = 1.05f; saturation = 1.08f; warmth = -0.4f; tint = 0f; vibrance = 0.05f }, label = { Text("Cool") })
                 }
-                else Box(Modifier.fillMaxWidth().height(180.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
                 if (processing) Text("Processing…", color = Color.LightGray)
                 EditorSlider("Exposure", exposure, -2f..2f, { exposure = it }, "%.1f EV".format(exposure))
                 EditorSlider("Contrast", contrast, 0f..2f, { contrast = it }, (contrast * 100).roundToInt().toString() + "%")
