@@ -1283,13 +1283,13 @@ private fun CameraPreview(
                     }
                     try {
                         boundCamera = cameraProvider.bindToLifecycle(
-                            lifecycleOwner, selector, preview, capture, video, video, analysis
+                            lifecycleOwner, selector, preview, capture, video, analysis
                         )
                     } catch (_: Exception) {
                         analysis.clearAnalyzer()
                         analysisExecutor.shutdown()
                         boundCamera = cameraProvider.bindToLifecycle(
-                            lifecycleOwner, selector, preview, capture
+                            lifecycleOwner, selector, preview, capture, video
                         )
                     }
                 } else {
@@ -1307,7 +1307,7 @@ private fun CameraPreview(
 
         onDispose {
             boundCamera = null
-            onCameraReady(null, null)
+            onCameraReady(null, null, null)
             onRawCapabilityChanged(false)
             if (cameraProviderFuture.isDone) {
                 runCatching { cameraProviderFuture.get().unbindAll() }
