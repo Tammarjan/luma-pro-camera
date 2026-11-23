@@ -44,6 +44,10 @@ internal fun PhotoEditorDialog(photoUri: Uri, onDismiss: () -> Unit) {
     var vibrance by remember(photoUri) { mutableFloatStateOf(0f) }
     var highlights by remember(photoUri) { mutableFloatStateOf(0f) }
     var shadows by remember(photoUri) { mutableFloatStateOf(0f) }
+    var whites by remember(photoUri) { mutableFloatStateOf(0f) }
+    var blacks by remember(photoUri) { mutableFloatStateOf(0f) }
+    var clarity by remember(photoUri) { mutableFloatStateOf(0f) }
+    var texture by remember(photoUri) { mutableFloatStateOf(0f) }
     var processing by remember { mutableStateOf(false) }
     var saving by remember { mutableStateOf(false) }
     var showOriginal by remember { mutableStateOf(false) }
@@ -76,7 +80,7 @@ internal fun PhotoEditorDialog(photoUri: Uri, onDismiss: () -> Unit) {
         edited = source
     }
 
-    LaunchedEffect(source, exposure, contrast, saturation, warmth, tint, vibrance, highlights, shadows) {
+    LaunchedEffect(source, exposure, contrast, saturation, warmth, tint, vibrance, highlights, shadows, whites, blacks, clarity, texture) {
         val original = source ?: return@LaunchedEffect
         delay(100)
         processing = true
@@ -87,6 +91,9 @@ internal fun PhotoEditorDialog(photoUri: Uri, onDismiss: () -> Unit) {
             val gain = 2.0.pow(exposure.toDouble()).toFloat()
             val highlightAmount = highlights
             val shadowAmount = shadows
+            val width = original.width
+            val height = original.height
+            fun pixelLuma(pixel: Int): Float = 0.2126f * ((pixel shr 16) and 0xFF) + 0.7152f * ((pixel shr 8) and 0xFF) + 0.0722f * (pixel and 0xFF)
             for (i in pixels.indices) {
                 val color = pixels[i]
                 val a = (color ushr 24) and 0xFF
@@ -98,9 +105,20 @@ internal fun PhotoEditorDialog(photoUri: Uri, onDismiss: () -> Unit) {
                 val shadowMask = (1f - normalizedLuma).pow(2)
                 val highlightMask = normalizedLuma.pow(2)
                 val toneAdjustment = (shadowMask * shadowAmount - highlightMask * highlightAmount) * 72f
-                r += toneAdjustment
-                g += toneAdjustment
-                b += toneAdjustment
+                val whiteMask = normalizedLuma.pow(1.5f)
+                val blackMask = (1f - normalizedLuma).pow(1.5f)
+                val whiteBlackAdjustment = (whiteMask * whites + blackMask * blacks) * 68f
+                val x = i % width
+                val y = i / width
+                fun sampleLuma(sx: Int, sy: Int): Float = pixelLuma(pixels[sy.coerceIn(0, height - 1) * width + sx.coerceIn(0, width - 1)])
+                val textureAverage = (sampleLuma(x - 2, y) + sampleLuma(x + 2, y) + sampleLuma(x, y - 2) + sampleLuma(x, y + 2)) * 0.25f
+                val clarityAverage = (sampleLuma(x - 7, y) + sampleLuma(x + 7, y) + sampleLuma(x, y - 7) + sampleLuma(x, y + 7)) * 0.25f
+                val textureDetail = (initialLuma - textureAverage) * texture * 0.45f
+                val clarityDetail = (initialLuma - clarityAverage) * clarity * 0.35f
+                val detailAdjustment = textureDetail + clarityDetail
+                r += toneAdjustment + whiteBlackAdjustment + detailAdjustment
+                g += toneAdjustment + whiteBlackAdjustment + detailAdjustment
+                b += toneAdjustment + whiteBlackAdjustment + detailAdjustment
                 r = (r - 128f) * contrast + 128f + warmth * 24f + tint * 12f
                 g = (g - 128f) * contrast + 128f - tint * 18f
                 b = (b - 128f) * contrast + 128f - warmth * 24f + tint * 12f
@@ -141,6 +159,10 @@ internal fun PhotoEditorDialog(photoUri: Uri, onDismiss: () -> Unit) {
                         vibrance = 0f
                         highlights = 0f
                         shadows = 0f
+                        whites = 0f
+                        blacks = 0f
+                        clarity = 0f
+                        texture = 0f
                         showOriginal = false
                     }, modifier = Modifier.weight(1f)) { Text("Reset") }
                 }
@@ -152,6 +174,10 @@ internal fun PhotoEditorDialog(photoUri: Uri, onDismiss: () -> Unit) {
                 EditorSlider("Saturation", saturation, 0f..2f, { saturation = it }, (saturation * 100).roundToInt().toString() + "%")
                 EditorSlider("Highlights", highlights, -1f..1f, { highlights = it }, if (highlights >= 0) "−" + (highlights * 100).roundToInt() + "%" else "+" + (-highlights * 100).roundToInt() + "%")
                 EditorSlider("Shadows", shadows, -1f..1f, { shadows = it }, if (shadows >= 0) "+" + (shadows * 100).roundToInt() + "%" else "−" + (-shadows * 100).roundToInt() + "%")
+                EditorSlider("Whites", whites, -1f..1f, { whites = it }, if (whites >= 0) "+" + (whites * 100).roundToInt() + "%" else "−" + (-whites * 100).roundToInt() + "%")
+                EditorSlider("Blacks", blacks, -1f..1f, { blacks = it }, if (blacks >= 0) "+" + (blacks * 100).roundToInt() + "%" else "−" + (-blacks * 100).roundToInt() + "%")
+                EditorSlider("Clarity", clarity, -1f..1f, { clarity = it }, if (clarity >= 0) "+" + (clarity * 100).roundToInt() + "%" else "−" + (-clarity * 100).roundToInt() + "%")
+                EditorSlider("Texture", texture, -1f..1f, { texture = it }, if (texture >= 0) "+" + (texture * 100).roundToInt() + "%" else "−" + (-texture * 100).roundToInt() + "%")
                 EditorSlider("Warmth", warmth, -1f..1f, { warmth = it }, if (warmth >= 0) "Warm +" + (warmth * 100).roundToInt() else "Cool " + (warmth * 100).roundToInt())
                 EditorSlider("Tint", tint, -1f..1f, { tint = it }, if (tint >= 0) "Magenta +" + (tint * 100).roundToInt() else "Green " + (tint * 100).roundToInt())
                 EditorSlider("Vibrance", vibrance, -1f..1f, { vibrance = it }, if (vibrance >= 0) "+" + (vibrance * 100).roundToInt() + "%" else (vibrance * 100).roundToInt().toString() + "%")
