@@ -229,6 +229,7 @@ private fun LumaCameraScreen() {
     var liveSaturation by remember { mutableFloatStateOf(0f) }
     var liveWarmth by remember { mutableFloatStateOf(0f) }
     var liveTint by remember { mutableFloatStateOf(0f) }
+    var selectedLiveLook by remember { mutableStateOf("NATURAL") }
     var zoomRatio by remember { mutableStateOf(1f) }
     var minZoomRatio by remember { mutableStateOf(1f) }
     var maxZoomRatio by remember { mutableStateOf(1f) }
@@ -623,13 +624,14 @@ private fun LumaCameraScreen() {
                                 liveSaturation = 0f
                                 liveWarmth = 0f
                                 liveTint = 0f
+                                selectedLiveLook = "NATURAL"
                             }
                         }
                         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            QuickCameraChip("NATURAL", true) { liveBrightness = 0f; liveContrast = 0f; liveSaturation = 0f; liveWarmth = 0f; liveTint = 0f }
-                            QuickCameraChip("VIVID", true) { liveBrightness = 0f; liveContrast = 0.12f; liveSaturation = 0.35f; liveWarmth = 0f; liveTint = 0f }
-                            QuickCameraChip("WARM", true) { liveBrightness = 0f; liveContrast = 0.05f; liveSaturation = 0.08f; liveWarmth = 0.4f; liveTint = 0.03f }
-                            QuickCameraChip("COOL", true) { liveBrightness = 0f; liveContrast = 0.05f; liveSaturation = 0.08f; liveWarmth = -0.4f; liveTint = 0f }
+                            QuickCameraChip("NATURAL", true, selectedLiveLook == "NATURAL") { liveBrightness = 0f; liveContrast = 0f; liveSaturation = 0f; liveWarmth = 0f; liveTint = 0f; selectedLiveLook = "NATURAL" }
+                            QuickCameraChip("VIVID", true, selectedLiveLook == "VIVID") { liveBrightness = 0f; liveContrast = 0.12f; liveSaturation = 0.35f; liveWarmth = 0f; liveTint = 0f; selectedLiveLook = "VIVID" }
+                            QuickCameraChip("WARM", true, selectedLiveLook == "WARM") { liveBrightness = 0f; liveContrast = 0.05f; liveSaturation = 0.08f; liveWarmth = 0.4f; liveTint = 0.03f; selectedLiveLook = "WARM" }
+                            QuickCameraChip("COOL", true, selectedLiveLook == "COOL") { liveBrightness = 0f; liveContrast = 0.05f; liveSaturation = 0.08f; liveWarmth = -0.4f; liveTint = 0f; selectedLiveLook = "COOL" }
                         }
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                             Text("EXPOSURE COMPENSATION", color = Color.White, style = MaterialTheme.typography.labelSmall)
@@ -840,12 +842,12 @@ private fun LumaCameraScreen() {
 
 
 @Composable
-private fun QuickCameraChip(label: String, enabled: Boolean = true, onClick: () -> Unit) {
+private fun QuickCameraChip(label: String, enabled: Boolean = true, selected: Boolean = false, onClick: () -> Unit) {
     Surface(        modifier = Modifier.clickable(enabled = enabled, onClick = onClick),
-        color = if (enabled) Color(0x66383838) else Color(0x33222222),
+        color = if (selected) Color(0xFFFFD54F) else if (enabled) Color(0x66383838) else Color(0x33222222),
         shape = RoundedCornerShape(16.dp)
     ) {
-        Text(label, color = if (enabled) Color.White else Color(0xFF777777),
+        Text(label, color = if (selected) Color.Black else if (enabled) Color.White else Color(0xFF777777),
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
             style = MaterialTheme.typography.labelSmall)
     }
