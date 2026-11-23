@@ -67,6 +67,8 @@ import java.util.concurrent.Executor
 import kotlin.math.roundToInt
 import kotlin.math.exp
 import kotlin.math.ln
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -93,6 +95,9 @@ private fun LumaCameraScreen() {
     var imageCapture by remember { mutableStateOf<ImageCapture?>(null) }
     var camera by remember { mutableStateOf<Camera?>(null) }
     var isCapturing by remember { mutableStateOf(false) }
+    var captureTimerSeconds by remember { mutableIntStateOf(0) }
+    var timerCountdown by remember { mutableIntStateOf(0) }
+    val cameraScope = androidx.compose.runtime.rememberCoroutineScope()
     var lensFacing by remember { mutableIntStateOf(CameraSelector.LENS_FACING_BACK) }
     var exposureMin by remember { mutableIntStateOf(0) }
     var exposureMax by remember { mutableIntStateOf(0) }
@@ -433,26 +438,46 @@ private fun LumaCameraScreen() {
                     onClick = {
                         val capture = imageCapture ?: return@Button
                         isCapturing = true
-                        capturePhoto(
-                            context = context,
-                            imageCapture = capture,
-                            executor = ContextCompat.getMainExecutor(context),
-                            saveRawAndJpeg = rawCaptureEnabled && rawJpegSupported,
-                            onComplete = { success ->
-                                isCapturing = false
-                                Toast.makeText(
-                                    context,
-                                    if (success) "Photo saved to Pictures/Luma Pro Camera"
-                                    else "Unable to capture photo",
-                                    Toast.LENGTH_SHORT
-                                ).show()
+                        cameraScope.launch {
+                            timerCountdown = captureTimerSeconds
+                            while (timerCountdown > 0) {
+                                delay(1000)
+                                timerCountdown -= 1
                             }
-                        )
+                            capturePhoto(
+                                context = context,
+                                imageCapture = capture,
+                                executor = ContextCompat.getMainExecutor(context),
+                                saveRawAndJpeg = rawCaptureEnabled && rawJpegSupported,
+                                onComplete = { success ->
+                                    isCapturing = false
+                                    Toast.makeText(
+                                        context,
+                                        if (success) "Photo saved to Pictures/Luma Pro Camera"
+                                        else "Unable to capture photo",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                }
+                            )
+                        }
                     }
                 ) {
-                    Text(if (isCapturing) "…" else "●")
+                    Text(if (timerCountdown > 0) timerCountdown.toString() else if (isCapturing) "…" else "●")
                 }
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Button(
+                        onClick = {
+                            captureTimerSeconds = when (captureTimerSeconds) {
+                                0 -> 3
+                                3 -> 5
+                                5 -> 10
+                                else -> 0
+                            }
+                        },
+                        enabled = !isCapturing
+                    ) {
+                        Text(if (captureTimerSeconds == 0) "Timer OFF" else "Timer " + captureTimerSeconds + "s")
+                    }
                     Text(if (rawCaptureEnabled && rawJpegSupported) "RAW + JPEG" else "JPEG", color = Color.White)
                     if (rawJpegSupported) {
                         Button(onClick = { rawCaptureEnabled = !rawCaptureEnabled }) {
