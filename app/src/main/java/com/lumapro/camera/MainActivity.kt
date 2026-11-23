@@ -614,6 +614,16 @@ private fun LumaCameraScreen() {
             Column(Modifier.fillMaxWidth().heightIn(max = 172.dp).verticalScroll(rememberScrollState())) {
                 when (cameraPanelTab) {
                     0 -> {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Text("LIVE LOOK", color = Color.White, style = MaterialTheme.typography.labelSmall)
+                            QuickCameraChip("RESET LOOK", true) {
+                                liveBrightness = 0f
+                                liveContrast = 0f
+                                liveSaturation = 0f
+                                liveWarmth = 0f
+                                liveTint = 0f
+                            }
+                        }
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                             Text("EXPOSURE COMPENSATION", color = Color.White, style = MaterialTheme.typography.labelSmall)
                             Text("EV ${if (exposureIndex > 0) "+" else ""}${exposureIndex}", color = Color(0xFFFFD54F), style = MaterialTheme.typography.labelSmall)
