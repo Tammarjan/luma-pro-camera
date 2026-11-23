@@ -98,6 +98,8 @@ private fun LumaCameraScreen() {
     var exposureMax by remember { mutableIntStateOf(0) }
     var exposureIndex by remember { mutableIntStateOf(0) }
     var zoomRatio by remember { mutableStateOf(1f) }
+    var minZoomRatio by remember { mutableStateOf(1f) }
+    var maxZoomRatio by remember { mutableStateOf(1f) }
     var flashAvailable by remember { mutableStateOf(false) }
     var flashEnabled by remember { mutableStateOf(false) }
     var gridEnabled by remember { mutableStateOf(false) }
@@ -143,6 +145,9 @@ private fun LumaCameraScreen() {
                         exposureMax = range.upper
                         exposureIndex = 0.coerceIn(range.lower, range.upper)
                         zoomRatio = 1f
+                        val zoomState = readyCamera.cameraInfo.zoomState.value
+                        minZoomRatio = zoomState?.minZoomRatio ?: 1f
+                        maxZoomRatio = zoomState?.maxZoomRatio ?: 1f
                         runCatching {
                             val info = Camera2CameraInfo.from(readyCamera.cameraInfo)
                             val minFocus = info.getCameraCharacteristic(
@@ -222,8 +227,8 @@ private fun LumaCameraScreen() {
         ) {
             Text("LUMA PRO", color = Color.White, style = MaterialTheme.typography.titleLarge)
             Text(
-                if (lensFacing == CameraSelector.LENS_FACING_BACK) "REAR CAMERA  •  JPEG"
-                else "FRONT CAMERA  •  JPEG",
+                if (lensFacing == CameraSelector.LENS_FACING_BACK) "REAR CAMERA  •  ${if (rawCaptureEnabled && rawJpegSupported) "RAW + JPEG" else "JPEG"}"
+                else "FRONT CAMERA  •  ${if (rawCaptureEnabled && rawJpegSupported) "RAW + JPEG" else "JPEG"}",
                 color = Color.LightGray,
                 style = MaterialTheme.typography.labelSmall
             )
@@ -374,29 +379,30 @@ private fun LumaCameraScreen() {
                 }
             }
             Row(
-                modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp),
+                modifier = Modifier.fillMaxWidth().padding(bottom = 2.dp),
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Button(
-                    onClick = {
-                        val maxZoom = camera?.cameraInfo?.zoomState?.value?.maxZoomRatio ?: 1f
-                        val target = 2f.coerceAtMost(maxZoom)
-                        camera?.cameraControl?.setZoomRatio(target)
-                        zoomRatio = target
+                listOf(0.5f, 1f, 2f).filter { it >= minZoomRatio && it <= maxZoomRatio }.forEach { preset ->
+                    Button(
+                        onClick = {
+                            camera?.cameraControl?.setZoomRatio(preset)
+                            zoomRatio = preset
+                        },
+                        enabled = camera != null
+                    ) { Text(if (preset == 0.5f) "0.5×" else if (preset == 1f) "1×" else "2×") }
+                }
+                Text("Zoom " + zoomRatio + "×", color = Color.LightGray)
+            }
+            if (maxZoomRatio > minZoomRatio) {
+                Slider(
+                    value = zoomRatio.coerceIn(minZoomRatio, maxZoomRatio),
+                    onValueChange = { next ->
+                        zoomRatio = next
+                        camera?.cameraControl?.setZoomRatio(next)
                     },
+                    valueRange = minZoomRatio..maxZoomRatio,
                     enabled = camera != null
-                ) { Text("2×") }
-                Button(
-                    onClick = {
-                        camera?.cameraControl?.setZoomRatio(1f)
-                        zoomRatio = 1f
-                    },
-                    enabled = camera != null
-                ) { Text("1×") }
-                Text(
-                    if (zoomRatio > 1.01f) "Zoom 2×" else "Zoom 1×",
-                    color = Color.LightGray
                 )
             }
             Row(
