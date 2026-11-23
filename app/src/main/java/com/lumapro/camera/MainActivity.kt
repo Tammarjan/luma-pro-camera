@@ -1152,6 +1152,8 @@ private fun CameraPreview(
     DisposableEffect(previewView, lifecycleOwner, lensFacing, jpegQuality, maximizeQuality, rawCaptureEnabled, aspectRatioWide, analysisEnabled) {
         val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
         val executor = ContextCompat.getMainExecutor(context)
+        val analysisExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
+        val lastAnalysisUpdate = java.util.concurrent.atomic.AtomicLong(0L)
         cameraProviderFuture.addListener({
             try {
                 val cameraProvider = cameraProviderFuture.get()
@@ -1185,7 +1187,6 @@ private fun CameraPreview(
                         .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                         .setTargetResolution(android.util.Size(320, 240))
                         .build()
-                    val analysisExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
                     analysis.setAnalyzer(analysisExecutor) { image ->
                         try {
                             val plane = image.planes.firstOrNull()
@@ -1223,11 +1224,15 @@ private fun CameraPreview(
                                 val peak = (bins.maxOrNull() ?: 1f).coerceAtLeast(1f)
                                 val normalized = bins.map { it / peak }
                                 val clipping = if (sampled > 0) clipped.toFloat() / sampled else 0f
-                                val rotation = image.imageInfo.rotationDegrees
-                                fun rotateMarks(marks: List<Offset>): List<Offset> = marks.map { p -> when (rotation) { 90 -> Offset(1f - p.y, p.x); 180 -> Offset(1f - p.x, 1f - p.y); 270 -> Offset(p.y, 1f - p.x); else -> p } }
-                                val rotatedZebras = rotateMarks(zebraMarks)
-                                val rotatedPeaks = rotateMarks(focusMarks)
-                                ContextCompat.getMainExecutor(context).execute { onAnalysis(normalized, clipping, rotatedZebras, rotatedPeaks) }
+                                val now = android.os.SystemClock.elapsedRealtime()
+                                val previous = lastAnalysisUpdate.get()
+                                if (now - previous >= 180L && lastAnalysisUpdate.compareAndSet(previous, now)) {
+                                    val rotation = image.imageInfo.rotationDegrees
+                                    fun rotateMarks(marks: List<Offset>): List<Offset> = marks.map { p -> when (rotation) { 90 -> Offset(1f - p.y, p.x); 180 -> Offset(1f - p.x, 1f - p.y); 270 -> Offset(p.y, 1f - p.x); else -> p } }
+                                    val rotatedZebras = rotateMarks(zebraMarks)
+                                    val rotatedPeaks = rotateMarks(focusMarks)
+                                    ContextCompat.getMainExecutor(context).execute { onAnalysis(normalized, clipping, rotatedZebras, rotatedPeaks) }
+                                }
                             }
                         } catch (_: Exception) {
                         } finally {
@@ -1265,6 +1270,7 @@ private fun CameraPreview(
             if (cameraProviderFuture.isDone) {
                 runCatching { cameraProviderFuture.get().unbindAll() }
             }
+            analysisExecutor.shutdown()
         }
     }
 }
