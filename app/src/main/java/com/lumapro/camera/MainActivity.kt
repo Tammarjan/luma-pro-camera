@@ -12,8 +12,6 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
-import androidx.camera.core.ExposureState
-import androidx.camera.core.FocusMeteringAction
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.Preview
@@ -152,17 +150,21 @@ private fun LumaCameraScreen() {
                     style = MaterialTheme.typography.labelMedium
                 )
             }
-            Slider(
-                value = exposureIndex.toFloat().coerceIn(exposureMin.toFloat(), exposureMax.toFloat()),
-                onValueChange = { value ->
-                    val next = value.roundToInt().coerceIn(exposureMin, exposureMax)
-                    exposureIndex = next
-                    camera?.cameraControl?.setExposureCompensationIndex(next)
-                },
-                valueRange = exposureMin.toFloat()..exposureMax.toFloat(),
-                steps = (exposureMax - exposureMin - 1).coerceAtLeast(0),
-                enabled = camera != null && exposureMax > exposureMin
-            )
+            if (exposureMax > exposureMin) {
+                Slider(
+                    value = exposureIndex.toFloat().coerceIn(exposureMin.toFloat(), exposureMax.toFloat()),
+                    onValueChange = { value ->
+                        val next = value.roundToInt().coerceIn(exposureMin, exposureMax)
+                        exposureIndex = next
+                        camera?.cameraControl?.setExposureCompensationIndex(next)
+                    },
+                    valueRange = exposureMin.toFloat()..exposureMax.toFloat(),
+                    steps = (exposureMax - exposureMin - 1).coerceAtLeast(0),
+                    enabled = camera != null
+                )
+            } else {
+                Text("Exposure adjustment unavailable on this camera", color = Color.LightGray)
+            }
             Row(
                 modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp),
                 horizontalArrangement = Arrangement.SpaceEvenly,
