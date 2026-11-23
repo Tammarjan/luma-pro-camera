@@ -4,6 +4,8 @@ import android.content.ContentValues
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Matrix
+import android.media.ExifInterface
 import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
@@ -42,6 +44,7 @@ internal fun PhotoEditorDialog(photoUri: Uri, onDismiss: () -> Unit) {
     var shadows by remember(photoUri) { mutableFloatStateOf(0f) }
     var processing by remember { mutableStateOf(false) }
     var saving by remember { mutableStateOf(false) }
+    var showOriginal by remember { mutableStateOf(false) }
 
     LaunchedEffect(photoUri) {
         source = withContext(Dispatchers.IO) {
@@ -50,7 +53,23 @@ internal fun PhotoEditorDialog(photoUri: Uri, onDismiss: () -> Unit) {
             var sample = 1
             while (bounds.outWidth / sample > 3000 || bounds.outHeight / sample > 3000) sample *= 2
             val options = BitmapFactory.Options().apply { inSampleSize = sample.coerceAtLeast(1); inPreferredConfig = Bitmap.Config.ARGB_8888 }
-            context.contentResolver.openInputStream(photoUri)?.use { BitmapFactory.decodeStream(it, null, options) }
+            val decoded = context.contentResolver.openInputStream(photoUri)?.use { BitmapFactory.decodeStream(it, null, options) }
+            if (decoded == null) null else {
+                val orientation = context.contentResolver.openInputStream(photoUri)?.use { input ->
+                    ExifInterface(input).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
+                } ?: ExifInterface.ORIENTATION_NORMAL
+                val matrix = Matrix()
+                when (orientation) {
+                    ExifInterface.ORIENTATION_ROTATE_90 -> matrix.postRotate(90f)
+                    ExifInterface.ORIENTATION_ROTATE_180 -> matrix.postRotate(180f)
+                    ExifInterface.ORIENTATION_ROTATE_270 -> matrix.postRotate(270f)
+                    ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> matrix.postScale(-1f, 1f)
+                    ExifInterface.ORIENTATION_FLIP_VERTICAL -> matrix.postScale(1f, -1f)
+                    ExifInterface.ORIENTATION_TRANSPOSE -> { matrix.postRotate(90f); matrix.postScale(-1f, 1f) }
+                    ExifInterface.ORIENTATION_TRANSVERSE -> { matrix.postRotate(270f); matrix.postScale(-1f, 1f) }
+                }
+                if (matrix.isIdentity) decoded else Bitmap.createBitmap(decoded, 0, 0, decoded.width, decoded.height, matrix, true)
+            }
         }
         edited = source
     }
@@ -103,8 +122,22 @@ internal fun PhotoEditorDialog(photoUri: Uri, onDismiss: () -> Unit) {
         title = { Text("Photo Editor", color = Color.White) },
         text = {
             Column(Modifier.fillMaxWidth().heightIn(max = 570.dp).verticalScroll(rememberScrollState())) {
-                val preview = edited
-                if (preview != null) Image(preview.asImageBitmap(), "Edited photo preview", Modifier.fillMaxWidth().heightIn(max = 300.dp), contentScale = androidx.compose.ui.layout.ContentScale.Fit)
+                val preview = if (showOriginal) source else edited
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = { showOriginal = !showOriginal }, enabled = source != null && edited != null, modifier = Modifier.weight(1f)) {
+                        Text(if (showOriginal) "Show Edited" else "Before / After")
+                    }
+                    OutlinedButton(onClick = {
+                        exposure = 0f
+                        contrast = 1f
+                        saturation = 1f
+                        warmth = 0f
+                        highlights = 0f
+                        shadows = 0f
+                        showOriginal = false
+                    }, modifier = Modifier.weight(1f)) { Text("Reset") }
+                }
+                if (preview != null) Image(preview.asImageBitmap(), if (showOriginal) "Original photo preview" else "Edited photo preview", Modifier.fillMaxWidth().heightIn(max = 300.dp), contentScale = androidx.compose.ui.layout.ContentScale.Fit)
                 else Box(Modifier.fillMaxWidth().height(180.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
                 if (processing) Text("Processing…", color = Color.LightGray)
                 EditorSlider("Exposure", exposure, -2f..2f, { exposure = it }, "%.1f EV".format(exposure))
@@ -119,6 +152,10 @@ internal fun PhotoEditorDialog(photoUri: Uri, onDismiss: () -> Unit) {
         confirmButton = {
             Button(enabled = edited != null && !processing && !saving, onClick = {
                 val bitmap = edited ?: return@Button
+                if (showOriginal) {
+                    Toast.makeText(context, "Edited preview select karein, phir save karein", Toast.LENGTH_SHORT).show()
+                    return@Button
+                }
                 saving = true
                 saveEditedPhoto(context, bitmap) { success ->
                     saving = false
