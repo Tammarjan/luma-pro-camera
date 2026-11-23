@@ -54,21 +54,24 @@ internal fun PhotoEditorDialog(photoUri: Uri, onDismiss: () -> Unit) {
     var sharpening by remember(photoUri) { mutableFloatStateOf(0f) }
     var noiseReduction by remember(photoUri) { mutableFloatStateOf(0f) }
     var vignette by remember(photoUri) { mutableFloatStateOf(0f) }
-    var processing by remember { mutableStateOf(false) }
-    var saving by remember { mutableStateOf(false) }
-    var showOriginal by remember { mutableStateOf(false) }
-    var selectedEditorLook by remember { mutableStateOf("Natural") }
-    var editorSection by remember { mutableStateOf(0) }
+    var processing by remember(photoUri) { mutableStateOf(false) }
+    var saving by remember(photoUri) { mutableStateOf(false) }
+    var showOriginal by remember(photoUri) { mutableStateOf(false) }
+    var selectedEditorLook by remember(photoUri) { mutableStateOf("Natural") }
+    var editorSection by remember(photoUri) { mutableStateOf(0) }
+    var loadFailed by remember(photoUri) { mutableStateOf(false) }
 
     LaunchedEffect(photoUri) {
-        source = withContext(Dispatchers.IO) {
-            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-            context.contentResolver.openInputStream(photoUri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
-            var sample = 1
-            while (bounds.outWidth / sample > 3000 || bounds.outHeight / sample > 3000) sample *= 2
-            val options = BitmapFactory.Options().apply { inSampleSize = sample.coerceAtLeast(1); inPreferredConfig = Bitmap.Config.ARGB_8888 }
-            val decoded = context.contentResolver.openInputStream(photoUri)?.use { BitmapFactory.decodeStream(it, null, options) }
-            if (decoded == null) null else {
+        loadFailed = false
+        val loaded = runCatching {
+            withContext(Dispatchers.IO) {
+                val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                context.contentResolver.openInputStream(photoUri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
+                var sample = 1
+                while (bounds.outWidth / sample > 3000 || bounds.outHeight / sample > 3000) sample *= 2
+                val options = BitmapFactory.Options().apply { inSampleSize = sample.coerceAtLeast(1); inPreferredConfig = Bitmap.Config.ARGB_8888 }
+                val decoded = context.contentResolver.openInputStream(photoUri)?.use { BitmapFactory.decodeStream(it, null, options) }
+                    ?: error("Could not decode image")
                 val orientation = context.contentResolver.openInputStream(photoUri)?.use { input ->
                     ExifInterface(input).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
                 } ?: ExifInterface.ORIENTATION_NORMAL
@@ -84,8 +87,10 @@ internal fun PhotoEditorDialog(photoUri: Uri, onDismiss: () -> Unit) {
                 }
                 if (matrix.isIdentity) decoded else Bitmap.createBitmap(decoded, 0, 0, decoded.width, decoded.height, matrix, true)
             }
-        }
-        edited = source
+        }.getOrNull()
+        source = loaded
+        edited = loaded
+        loadFailed = loaded == null
     }
 
     LaunchedEffect(source, exposure, contrast, saturation, warmth, tint, vibrance, highlights, shadows, whites, blacks, clarity, texture, sharpening, noiseReduction, vignette) {
@@ -201,8 +206,14 @@ internal fun PhotoEditorDialog(photoUri: Uri, onDismiss: () -> Unit) {
                         showOriginal = false
                     }, modifier = Modifier.weight(1f)) { Text("Reset") }
                 }
-                if (preview != null) Image(preview.asImageBitmap(), if (showOriginal) "Original photo preview" else "Edited photo preview", Modifier.fillMaxWidth().heightIn(max = 300.dp), contentScale = androidx.compose.ui.layout.ContentScale.Fit)
-                else Box(Modifier.fillMaxWidth().height(180.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+                if (preview != null) {
+                    Image(preview.asImageBitmap(), if (showOriginal) "Original photo preview" else "Edited photo preview", Modifier.fillMaxWidth().heightIn(max = 300.dp), contentScale = androidx.compose.ui.layout.ContentScale.Fit)
+                } else {
+                    Box(Modifier.fillMaxWidth().height(180.dp), contentAlignment = Alignment.Center) {
+                        if (loadFailed) Text("Could not load this photo. It may have been moved or deleted.", color = Color(0xFFFF8A80))
+                        else CircularProgressIndicator()
+                    }
+                }
                 Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     FilterChip(selected = selectedEditorLook == "Natural", onClick = { selectedEditorLook = "Natural"; exposure = 0f; contrast = 1f; saturation = 1f; warmth = 0f; tint = 0f; vibrance = 0f }, label = { Text("Natural") })
                     FilterChip(selected = selectedEditorLook == "Vivid", onClick = { selectedEditorLook = "Vivid"; exposure = 0f; contrast = 1.12f; saturation = 1.28f; warmth = 0f; tint = 0f; vibrance = 0.2f }, label = { Text("Vivid") })
