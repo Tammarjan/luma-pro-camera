@@ -96,6 +96,8 @@ private fun LumaCameraScreen() {
     var camera by remember { mutableStateOf<Camera?>(null) }
     var isCapturing by remember { mutableStateOf(false) }
     var captureTimerSeconds by remember { mutableIntStateOf(0) }
+    var jpegQuality by remember { mutableIntStateOf(95) }
+    var maximizeQuality by remember { mutableStateOf(true) }
     var timerCountdown by remember { mutableIntStateOf(0) }
     val cameraScope = androidx.compose.runtime.rememberCoroutineScope()
     var lensFacing by remember { mutableIntStateOf(CameraSelector.LENS_FACING_BACK) }
@@ -134,6 +136,8 @@ private fun LumaCameraScreen() {
             CameraPreview(
                 modifier = Modifier.fillMaxSize(),
                 lensFacing = lensFacing,
+                jpegQuality = jpegQuality,
+                maximizeQuality = maximizeQuality,
                 onCameraReady = { readyCamera, readyCapture ->
                     camera = readyCamera
                     imageCapture = readyCapture
@@ -255,6 +259,31 @@ private fun LumaCameraScreen() {
                     color = Color.White,
                     style = MaterialTheme.typography.labelMedium
                 )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("JPEG QUALITY", color = Color.White, style = MaterialTheme.typography.labelMedium)
+                Text("$jpegQuality%", color = Color.White, style = MaterialTheme.typography.labelMedium)
+            }
+            Slider(
+                value = jpegQuality.toFloat(),
+                onValueChange = { jpegQuality = it.roundToInt().coerceIn(70, 100) },
+                valueRange = 70f..100f,
+                steps = 29,
+                enabled = !isCapturing
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("CAPTURE PRIORITY", color = Color.White, style = MaterialTheme.typography.labelMedium)
+                Button(onClick = { maximizeQuality = !maximizeQuality }, enabled = !isCapturing) {
+                    Text(if (maximizeQuality) "Quality" else "Speed")
+                }
             }
             if (exposureMax > exposureMin) {
                 Slider(
@@ -651,6 +680,8 @@ private fun capturePhoto(
 private fun CameraPreview(
     modifier: Modifier = Modifier,
     lensFacing: Int,
+    jpegQuality: Int,
+    maximizeQuality: Boolean,
     onCameraReady: (Camera?, ImageCapture?) -> Unit,
     onTapFocus: () -> Unit,
     onRawCapabilityChanged: (Boolean) -> Unit
@@ -684,7 +715,7 @@ private fun CameraPreview(
         factory = { previewView }
     )
 
-    DisposableEffect(previewView, lifecycleOwner, lensFacing) {
+    DisposableEffect(previewView, lifecycleOwner, lensFacing, jpegQuality, maximizeQuality) {
         val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
         val executor = ContextCompat.getMainExecutor(context)
         cameraProviderFuture.addListener({
@@ -700,7 +731,8 @@ private fun CameraPreview(
                 }.getOrDefault(setOf(ImageCapture.OUTPUT_FORMAT_JPEG))
                 val supportsRawJpeg = supportedFormats.contains(ImageCapture.OUTPUT_FORMAT_RAW_JPEG)
                 val captureBuilder = ImageCapture.Builder()
-                    .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
+                    .setCaptureMode(if (maximizeQuality) ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY else ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
+                    .setJpegQuality(jpegQuality.toByte())
                 if (supportsRawJpeg) captureBuilder.setOutputFormat(ImageCapture.OUTPUT_FORMAT_RAW_JPEG)
                 val capture = captureBuilder.build()
 
