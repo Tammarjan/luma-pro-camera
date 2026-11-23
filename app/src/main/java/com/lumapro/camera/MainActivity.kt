@@ -198,6 +198,7 @@ private fun LumaCameraScreen() {
     var flashEnabled by remember { mutableStateOf(false) }
     var gridEnabled by remember { mutableStateOf(false) }
     var levelEnabled by remember { mutableStateOf(false) }
+    var focusLockEnabled by remember { mutableStateOf(false) }
     var rollDegrees by remember { mutableFloatStateOf(0f) }
     var rawJpegSupported by remember { mutableStateOf(false) }
     var rawCaptureEnabled by remember { mutableStateOf(false) }
@@ -643,6 +644,15 @@ private fun LumaCameraScreen() {
                 Button(onClick = { levelEnabled = !levelEnabled }) {
                     Text(if (levelEnabled) "Level ON" else "Level OFF")
                 }
+                Button(
+                    onClick = {
+                        focusLockEnabled = !focusLockEnabled
+                        setFocusLock(camera, focusLockEnabled)
+                    },
+                    enabled = camera != null
+                ) {
+                    Text(if (focusLockEnabled) "AE/AF LOCK" else "AE/AF AUTO")
+                }
             }
             Row(
                 modifier = Modifier.fillMaxWidth().padding(bottom = 2.dp),
@@ -879,6 +889,39 @@ private fun setAutoFocus(camera: Camera?) {
             .setCaptureRequestOption(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE)
             .build()
         Camera2CameraControl.from(activeCamera.cameraControl).setCaptureRequestOptions(options)
+    }
+}
+
+private fun setFocusLock(camera: Camera?, locked: Boolean) {
+    val activeCamera = camera ?: return
+    runCatching {
+        val builder = CaptureRequestOptions.Builder()
+        builder.setCaptureRequestOption(
+            CaptureRequest.CONTROL_AE_LOCK,
+            locked
+        )
+        builder.setCaptureRequestOption(
+            CaptureRequest.CONTROL_AWB_LOCK,
+            locked
+        )
+        builder.setCaptureRequestOption(
+            CaptureRequest.CONTROL_AF_MODE,
+            if (locked) CaptureRequest.CONTROL_AF_MODE_AUTO
+            else CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE
+        )
+        if (locked) {
+            builder.setCaptureRequestOption(
+                CaptureRequest.CONTROL_AF_TRIGGER,
+                CaptureRequest.CONTROL_AF_TRIGGER_START
+            )
+        } else {
+            builder.setCaptureRequestOption(
+                CaptureRequest.CONTROL_AF_TRIGGER,
+                CaptureRequest.CONTROL_AF_TRIGGER_CANCEL
+            )
+        }
+        Camera2CameraControl.from(activeCamera.cameraControl)
+            .setCaptureRequestOptions(builder.build())
     }
 }
 
