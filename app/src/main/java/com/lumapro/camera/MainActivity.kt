@@ -45,6 +45,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
@@ -293,22 +294,45 @@ private fun LumaCameraScreen() {
 
         Column(
             modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth()
-                .background(Color(0x77000000)).padding(horizontal = 20.dp, vertical = 16.dp)
+                .background(Color(0x990A0A0A)).padding(horizontal = 18.dp, vertical = 14.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("LUMA PRO", color = Color.White, style = MaterialTheme.typography.titleLarge)
-                Button(onClick = { showGallery = true }) { Text("Gallery") }
+                Column {
+                    Text("LUMA PRO", color = Color.White, style = MaterialTheme.typography.titleLarge)
+                    Text("PRO CAMERA", color = Color(0xFFB9B9B9), style = MaterialTheme.typography.labelSmall)
+                }
+                Button(
+                    onClick = { showGallery = true },
+                    shape = RoundedCornerShape(18.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF303030))
+                ) { Text("Gallery  ▣") }
             }
-            Text(
-                if (lensFacing == CameraSelector.LENS_FACING_BACK) "REAR CAMERA  •  ${if (rawCaptureEnabled && rawJpegSupported) "RAW + JPEG" else "JPEG"}"
-                else "FRONT CAMERA  •  ${if (rawCaptureEnabled && rawJpegSupported) "RAW + JPEG" else "JPEG"}",
-                color = Color.LightGray,
-                style = MaterialTheme.typography.labelSmall
-            )
+            Spacer(Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Surface(color = Color(0xFF292929), shape = RoundedCornerShape(20.dp)) {
+                    Text(
+                        if (lensFacing == CameraSelector.LENS_FACING_BACK) "REAR" else "FRONT",
+                        color = Color.White, modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                        style = MaterialTheme.typography.labelSmall
+                    )
+                }
+                Surface(color = Color(0xFF292929), shape = RoundedCornerShape(20.dp)) {
+                    Text(
+                        if (rawCaptureEnabled && rawJpegSupported) "RAW + JPEG" else "JPEG",
+                        color = Color.White, modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                        style = MaterialTheme.typography.labelSmall
+                    )
+                }
+                Surface(color = Color(0xFF292929), shape = RoundedCornerShape(20.dp)) {
+                    Text(if (aspectRatioWide) "16:9" else "4:3", color = Color.White,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                        style = MaterialTheme.typography.labelSmall)
+                }
+            }
         }
 
         Column(
@@ -547,7 +571,7 @@ private fun LumaCameraScreen() {
                 ) { Text("Flip") }
 
                 Button(
-                    modifier = Modifier.size(76.dp),
+                    modifier = Modifier.size(84.dp),
                     enabled = imageCapture != null && !isCapturing,
                     shape = CircleShape,
                     colors = ButtonDefaults.buttonColors(
