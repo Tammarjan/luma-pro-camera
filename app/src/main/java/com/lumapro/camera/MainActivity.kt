@@ -1,6 +1,8 @@
 package com.lumapro.camera
 
 import android.Manifest
+import android.hardware.camera2.CameraCharacteristics
+import android.hardware.camera2.CaptureRequest
 import android.content.ContentValues
 import android.content.pm.PackageManager
 import android.os.Bundle
@@ -12,6 +14,9 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
+import androidx.camera.camera2.interop.Camera2CameraControl
+import androidx.camera.camera2.interop.Camera2CameraInfo
+import androidx.camera.camera2.interop.CaptureRequestOptions
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.Preview
@@ -39,6 +44,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -54,6 +60,8 @@ import java.util.Date
 import java.util.Locale
 import java.util.concurrent.Executor
 import kotlin.math.roundToInt
+import kotlin.math.exp
+import kotlin.math.ln
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -85,6 +93,14 @@ private fun LumaCameraScreen() {
     var exposureMax by remember { mutableIntStateOf(0) }
     var exposureIndex by remember { mutableIntStateOf(0) }
     var zoomRatio by remember { mutableStateOf(1f) }
+    var manualSensorSupported by remember { mutableStateOf(false) }
+    var manualExposureEnabled by remember { mutableStateOf(false) }
+    var isoMin by remember { mutableIntStateOf(100) }
+    var isoMax by remember { mutableIntStateOf(3200) }
+    var isoValue by remember { mutableIntStateOf(200) }
+    var shutterMinNs by remember { mutableLongStateOf(125_000L) }
+    var shutterMaxNs by remember { mutableLongStateOf(1_000_000_000L) }
+    var shutterValueNs by remember { mutableLongStateOf(8_333_333L) }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -98,12 +114,39 @@ private fun LumaCameraScreen() {
                 onCameraReady = { readyCamera, readyCapture ->
                     camera = readyCamera
                     imageCapture = readyCapture
+                    manualExposureEnabled = false
+                    manualSensorSupported = false
                     if (readyCamera != null) {
                         val range = readyCamera.cameraInfo.exposureState.exposureCompensationRange
                         exposureMin = range.lower
                         exposureMax = range.upper
                         exposureIndex = 0.coerceIn(range.lower, range.upper)
                         zoomRatio = 1f
+                        runCatching {
+                            val info = Camera2CameraInfo.from(readyCamera.cameraInfo)
+                            val capabilities = info.getCameraCharacteristic(
+                                CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES
+                            )
+                            manualSensorSupported = capabilities?.contains(
+                                CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_MANUAL_SENSOR
+                            ) == true
+                            val isoRange = info.getCameraCharacteristic(
+                                CameraCharacteristics.SENSOR_INFO_SENSITIVITY_RANGE
+                            )
+                            val shutterRange = info.getCameraCharacteristic(
+                                CameraCharacteristics.SENSOR_INFO_EXPOSURE_TIME_RANGE
+                            )
+                            if (isoRange != null && shutterRange != null && manualSensorSupported) {
+                                isoMin = isoRange.lower
+                                isoMax = isoRange.upper
+                                isoValue = 200.coerceIn(isoMin, isoMax)
+                                shutterMinNs = shutterRange.lower
+                                shutterMaxNs = shutterRange.upper
+                                shutterValueNs = 8_333_333L.coerceIn(shutterMinNs, shutterMaxNs)
+                            } else {
+                                manualSensorSupported = false
+                            }
+                        }.onFailure { manualSensorSupported = false }
                     }
                 }
             )
@@ -164,6 +207,48 @@ private fun LumaCameraScreen() {
                 )
             } else {
                 Text("Exposure adjustment unavailable on this camera", color = Color.LightGray)
+            }
+            if (manualSensorSupported) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("MANUAL ISO / SHUTTER", color = Color.White, style = MaterialTheme.typography.labelMedium)
+                    Button(onClick = {
+                        manualExposureEnabled = !manualExposureEnabled
+                        setManualExposure(camera, manualExposureEnabled, isoValue, shutterValueNs)
+                    }) { Text(if (manualExposureEnabled) "MANUAL ON" else "AUTO") }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("ISO $isoValue", color = Color.White, modifier = Modifier.weight(1f))
+                    Slider(
+                        modifier = Modifier.weight(2f),
+                        value = isoValue.toFloat(),
+                        onValueChange = {
+                            isoValue = it.roundToInt().coerceIn(isoMin, isoMax)
+                            if (manualExposureEnabled) setManualExposure(camera, true, isoValue, shutterValueNs)
+                        },
+                        valueRange = isoMin.toFloat()..isoMax.toFloat(),
+                        enabled = manualExposureEnabled && isoMax > isoMin
+                    )
+                }
+                val shutterFraction = shutterToFraction(shutterValueNs, shutterMinNs, shutterMaxNs)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Shutter 1/${(1_000_000_000.0 / shutterValueNs).roundToInt()}s", color = Color.White, modifier = Modifier.weight(1f))
+                    Slider(
+                        modifier = Modifier.weight(2f),
+                        value = shutterFraction,
+                        onValueChange = {
+                            shutterValueNs = fractionToShutter(it, shutterMinNs, shutterMaxNs)
+                            if (manualExposureEnabled) setManualExposure(camera, true, isoValue, shutterValueNs)
+                        },
+                        valueRange = 0f..1f,
+                        enabled = manualExposureEnabled && shutterMaxNs > shutterMinNs
+                    )
+                }
+            } else {
+                Text("Manual ISO / shutter not supported by this camera", color = Color.LightGray, style = MaterialTheme.typography.labelSmall)
             }
             Row(
                 modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp),
@@ -240,6 +325,35 @@ private fun LumaCameraScreen() {
                 Text("JPEG", color = Color.White)
             }
         }
+    }
+}
+
+
+private fun shutterToFraction(value: Long, min: Long, max: Long): Float {
+    if (max <= min || min <= 0L) return 0f
+    return ((ln(value.coerceIn(min, max).toDouble()) - ln(min.toDouble())) /
+        (ln(max.toDouble()) - ln(min.toDouble()))).toFloat().coerceIn(0f, 1f)
+}
+
+private fun fractionToShutter(fraction: Float, min: Long, max: Long): Long {
+    if (max <= min || min <= 0L) return min
+    val logValue = ln(min.toDouble()) +
+        (ln(max.toDouble()) - ln(min.toDouble())) * fraction.coerceIn(0f, 1f)
+    return exp(logValue).toLong().coerceIn(min, max)
+}
+
+private fun setManualExposure(camera: Camera?, enabled: Boolean, iso: Int, shutterNs: Long) {
+    val activeCamera = camera ?: return
+    runCatching {
+        val builder = CaptureRequestOptions.Builder()
+        if (enabled) {
+            builder.setCaptureRequestOption(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_OFF)
+            builder.setCaptureRequestOption(CaptureRequest.SENSOR_SENSITIVITY, iso)
+            builder.setCaptureRequestOption(CaptureRequest.SENSOR_EXPOSURE_TIME, shutterNs)
+        } else {
+            builder.setCaptureRequestOption(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_ON)
+        }
+        Camera2CameraControl.from(activeCamera.cameraControl).setCaptureRequestOptions(builder.build())
     }
 }
 
