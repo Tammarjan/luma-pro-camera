@@ -19,6 +19,7 @@ import androidx.camera.camera2.interop.Camera2CameraInfo
 import androidx.camera.camera2.interop.CaptureRequestOptions
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
+import androidx.camera.core.FocusMeteringAction
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
@@ -52,6 +53,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
@@ -180,6 +183,13 @@ private fun LumaCameraScreen() {
                                 manualSensorSupported = false
                             }
                         }.onFailure { manualSensorSupported = false }
+                    }
+                },
+                onTapFocus = {
+                    if (manualFocusEnabled) {
+                        manualFocusEnabled = false
+                        focusDistance = 0f
+                        setAutoFocus(camera)
                     }
                 }
             )
@@ -349,7 +359,7 @@ private fun LumaCameraScreen() {
                 ) {
                     Text(if (!flashAvailable) "Flash N/A" else if (flashEnabled) "Flash ON" else "Flash OFF")
                 }
-                Text("Tap focus is next", color = Color.LightGray, style = MaterialTheme.typography.labelSmall)
+                Text("Tap preview to focus", color = Color.LightGray, style = MaterialTheme.typography.labelSmall)
             }
             Row(
                 modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp),
@@ -541,7 +551,8 @@ private fun capturePhoto(
 private fun CameraPreview(
     modifier: Modifier = Modifier,
     lensFacing: Int,
-    onCameraReady: (Camera?, ImageCapture?) -> Unit
+    onCameraReady: (Camera?, ImageCapture?) -> Unit,
+    onTapFocus: () -> Unit
 ) {
     val context = LocalContext.current
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
@@ -552,7 +563,25 @@ private fun CameraPreview(
         }
     }
 
-    AndroidView(modifier = modifier, factory = { previewView })
+    var boundCamera: Camera? = null
+    AndroidView(
+        modifier = modifier.pointerInput(previewView, lensFacing) {
+            detectTapGestures { offset ->
+                val activeCamera = boundCamera
+                if (activeCamera != null && previewView.width > 0 && previewView.height > 0) {
+                    onTapFocus()
+                    runCatching {
+                        val point = previewView.meteringPointFactory.createPoint(offset.x, offset.y)
+                        val action = FocusMeteringAction.Builder(point)
+                            .setAutoCancelDuration(3, java.util.concurrent.TimeUnit.SECONDS)
+                            .build()
+                        activeCamera.cameraControl.startFocusAndMetering(action)
+                    }
+                }
+            }
+        },
+        factory = { previewView }
+    )
 
     DisposableEffect(previewView, lifecycleOwner, lensFacing) {
         val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
@@ -569,7 +598,7 @@ private fun CameraPreview(
                 val selector = CameraSelector.Builder().requireLensFacing(lensFacing).build()
 
                 cameraProvider.unbindAll()
-                val boundCamera = cameraProvider.bindToLifecycle(
+                boundCamera = cameraProvider.bindToLifecycle(
                     lifecycleOwner,
                     selector,
                     preview,
@@ -582,6 +611,7 @@ private fun CameraPreview(
         }, executor)
 
         onDispose {
+            boundCamera = null
             onCameraReady(null, null)
             if (cameraProviderFuture.isDone) {
                 runCatching { cameraProviderFuture.get().unbindAll() }
