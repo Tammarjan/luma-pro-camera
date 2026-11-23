@@ -563,7 +563,7 @@ private fun CameraPreview(
         }
     }
 
-    var boundCamera: Camera? = null
+    var boundCamera by remember { mutableStateOf<Camera?>(null) }
     AndroidView(
         modifier = modifier.pointerInput(previewView, lensFacing) {
             detectTapGestures { offset ->
