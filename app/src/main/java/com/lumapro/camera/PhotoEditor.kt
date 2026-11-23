@@ -56,6 +56,7 @@ internal fun PhotoEditorDialog(photoUri: Uri, onDismiss: () -> Unit) {
     var processing by remember { mutableStateOf(false) }
     var saving by remember { mutableStateOf(false) }
     var showOriginal by remember { mutableStateOf(false) }
+    var selectedEditorLook by remember { mutableStateOf("Natural") }
 
     LaunchedEffect(photoUri) {
         source = withContext(Dispatchers.IO) {
@@ -194,10 +195,17 @@ internal fun PhotoEditorDialog(photoUri: Uri, onDismiss: () -> Unit) {
                         sharpening = 0f
                         noiseReduction = 0f
                         vignette = 0f
+                        selectedEditorLook = "Natural"
                         showOriginal = false
                     }, modifier = Modifier.weight(1f)) { Text("Reset") }
                 }
                 if (preview != null) Image(preview.asImageBitmap(), if (showOriginal) "Original photo preview" else "Edited photo preview", Modifier.fillMaxWidth().heightIn(max = 300.dp), contentScale = androidx.compose.ui.layout.ContentScale.Fit)
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    FilterChip(selected = selectedEditorLook == "Natural", onClick = { selectedEditorLook = "Natural"; exposure = 0f; contrast = 1f; saturation = 1f; warmth = 0f; tint = 0f; vibrance = 0f }, label = { Text("Natural") })
+                    FilterChip(selected = selectedEditorLook == "Vivid", onClick = { selectedEditorLook = "Vivid"; exposure = 0f; contrast = 1.12f; saturation = 1.28f; warmth = 0f; tint = 0f; vibrance = 0.2f }, label = { Text("Vivid") })
+                    FilterChip(selected = selectedEditorLook == "Warm", onClick = { selectedEditorLook = "Warm"; exposure = 0f; contrast = 1.05f; saturation = 1.08f; warmth = 0.4f; tint = 0.03f; vibrance = 0.05f }, label = { Text("Warm") })
+                    FilterChip(selected = selectedEditorLook == "Cool", onClick = { selectedEditorLook = "Cool"; exposure = 0f; contrast = 1.05f; saturation = 1.08f; warmth = -0.4f; tint = 0f; vibrance = 0.05f }, label = { Text("Cool") })
+                }
                 else Box(Modifier.fillMaxWidth().height(180.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
                 if (processing) Text("Processing…", color = Color.LightGray)
                 EditorSlider("Exposure", exposure, -2f..2f, { exposure = it }, "%.1f EV".format(exposure))
