@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -109,37 +110,20 @@ private fun LumaCameraScreen() {
 
         Row(
             modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth()
-                .background(Color(0x88000000)).padding(horizontal = 28.dp, vertical = 24.dp),
+                .background(Color(0x88000000)).padding(horizontal = 28.dp, vertical = 22.dp),
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text("PRO", color = Color.White)
-            Box(
-                modifier = Modifier.size(76.dp).background(Color.White, CircleShape).padding(5.dp)
-                    .background(Color.Black, CircleShape).padding(5.dp)
-                    .background(Color.White, CircleShape)
-            ) {
-                Box(
-                    modifier = Modifier.fillMaxSize().background(Color.White, CircleShape)
-                )
-            }
-            Text("JPEG", color = Color.White)
-        }
-
-        // Transparent capture target over the shutter button.
-        if (hasPermission) {
-            Box(
-                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 24.dp)
-                    .size(76.dp)
-                    .background(Color.Transparent, CircleShape)
-            )
-        }
-
-        if (hasPermission) {
-            // The shutter action is provided as an accessible button.
             Button(
-                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 34.dp),
+                modifier = Modifier.size(76.dp),
                 enabled = imageCapture != null && !isCapturing,
+                shape = CircleShape,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color.White,
+                    contentColor = Color.Black,
+                    disabledContainerColor = Color.Gray
+                ),
                 onClick = {
                     val capture = imageCapture ?: return@Button
                     isCapturing = true
@@ -159,8 +143,9 @@ private fun LumaCameraScreen() {
                     )
                 }
             ) {
-                Text(if (isCapturing) "CAPTURING…" else "TAKE PHOTO")
+                Text(if (isCapturing) "…" else "●")
             }
+            Text("JPEG", color = Color.White)
         }
     }
 }
