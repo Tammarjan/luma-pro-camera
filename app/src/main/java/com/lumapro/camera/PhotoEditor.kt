@@ -25,6 +25,8 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -89,17 +91,18 @@ internal fun PhotoEditorDialog(photoUri: Uri, onDismiss: () -> Unit) {
         processing = true
         val result = withContext(Dispatchers.Default) {
             val output = Bitmap.createBitmap(original.width, original.height, Bitmap.Config.ARGB_8888)
-            val pixels = IntArray(original.width * original.height)
-            original.getPixels(pixels, 0, original.width, 0, 0, original.width, original.height)
-            val sourcePixels = pixels.copyOf()
+            val sourcePixels = IntArray(original.width * original.height)
+            original.getPixels(sourcePixels, 0, original.width, 0, 0, original.width, original.height)
+            val outputPixels = IntArray(sourcePixels.size)
             val gain = 2.0.pow(exposure.toDouble()).toFloat()
             val highlightAmount = highlights
             val shadowAmount = shadows
             val width = original.width
             val height = original.height
             fun pixelLuma(pixel: Int): Float = 0.2126f * ((pixel shr 16) and 0xFF) + 0.7152f * ((pixel shr 8) and 0xFF) + 0.0722f * (pixel and 0xFF)
-            for (i in pixels.indices) {
-                val color = pixels[i]
+            for (i in sourcePixels.indices) {
+                if (i % width == 0) currentCoroutineContext().ensureActive()
+                val color = sourcePixels[i]
                 val x = i % width
                 val y = i / width
                 val a = (color ushr 24) and 0xFF
@@ -154,10 +157,10 @@ internal fun PhotoEditorDialog(photoUri: Uri, onDismiss: () -> Unit) {
                 r *= vignetteFactor
                 g *= vignetteFactor
                 b *= vignetteFactor
-                pixels[i] = (a shl 24) or (r.roundToInt().coerceIn(0, 255) shl 16) or
+                outputPixels[i] = (a shl 24) or (r.roundToInt().coerceIn(0, 255) shl 16) or
                     (g.roundToInt().coerceIn(0, 255) shl 8) or b.roundToInt().coerceIn(0, 255)
             }
-            output.setPixels(pixels, 0, original.width, 0, 0, original.width, original.height)
+            output.setPixels(outputPixels, 0, original.width, 0, 0, original.width, original.height)
             output
         }
         edited = result
