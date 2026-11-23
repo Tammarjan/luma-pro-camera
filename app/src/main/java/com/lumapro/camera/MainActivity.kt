@@ -865,6 +865,39 @@ private fun LumaCameraScreen() {
 
 
 @Composable
+private fun LiveHistogramOverlay(
+    bins: List<Float>,
+    clipping: Float,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .background(Color.Black.copy(alpha = 0.62f), RoundedCornerShape(10.dp))
+            .padding(8.dp),
+        horizontalAlignment = Alignment.End
+    ) {
+        Canvas(modifier = Modifier.size(width = 150.dp, height = 62.dp)) {
+            val barWidth = size.width / bins.size
+            bins.forEachIndexed { index, value ->
+                val barHeight = value.coerceIn(0f, 1f) * size.height
+                drawRect(
+                    color = Color.White.copy(alpha = 0.88f),
+                    topLeft = Offset(index * barWidth, size.height - barHeight),
+                    size = androidx.compose.ui.geometry.Size((barWidth - 1f).coerceAtLeast(1f), barHeight)
+                )
+            }
+        }
+        Text(
+            text = if (clipping >= 0.02f) "HIGHLIGHTS CLIPPING " + (clipping * 100).roundToInt() + "%"
+                   else "LIVE HISTOGRAM",
+            color = if (clipping >= 0.02f) Color(0xFFFFB74D) else Color.White,
+            style = MaterialTheme.typography.labelSmall
+        )
+    }
+}
+
+
+@Composable
 private fun RuleOfThirdsGrid(modifier: Modifier = Modifier) {
     Canvas(modifier = modifier) {
         val lineColor = Color.White.copy(alpha = 0.48f)
