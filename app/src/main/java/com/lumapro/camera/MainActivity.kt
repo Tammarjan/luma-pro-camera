@@ -141,7 +141,6 @@ private fun LumaCameraScreen() {
     val haptic = LocalHapticFeedback.current
     var showGallery by remember { mutableStateOf(false) }
     var editingPhoto by remember { mutableStateOf<GalleryPhoto?>(null) }
-    var showProSettings by remember { mutableStateOf(false) }
     var cameraPanelTab by remember { mutableIntStateOf(0) }
     var galleryPhotos by remember { mutableStateOf<List<GalleryPhoto>>(emptyList()) }
     var selectedPhoto by remember { mutableStateOf<GalleryPhoto?>(null) }
@@ -397,8 +396,7 @@ private fun LumaCameraScreen() {
                 },
                 onRawCapabilityChanged = { supported ->
                     rawJpegSupported = supported
-                    if (!supported) rawCaptureEnabled = false
-                },
+                    if (!supported) rawCaptureEnabled = false                },
                 onTapFocus = {
                     if (manualFocusEnabled) {
                         manualFocusEnabled = false
@@ -461,7 +459,7 @@ private fun LumaCameraScreen() {
                     color = Color(0x88333333), shape = RoundedCornerShape(18.dp)
                 ) { Text("GALLERY", color = Color.White, modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp), style = MaterialTheme.typography.labelSmall) }
                 Surface(
-                    modifier = Modifier.clickable { showProSettings = !showProSettings },
+                    modifier = Modifier.clickable { cameraPanelTab = 1 },
                     color = Color(0x88333333), shape = CircleShape
                 ) { Text("⋮", color = Color.White, modifier = Modifier.padding(horizontal = 13.dp, vertical = 6.dp), style = MaterialTheme.typography.titleMedium) }
             }
@@ -528,7 +526,7 @@ private fun LumaCameraScreen() {
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Surface(modifier = Modifier.clickable { lensFacing = if (lensFacing == CameraSelector.LENS_FACING_BACK) CameraSelector.LENS_FACING_FRONT else CameraSelector.LENS_FACING_BACK },
+                Surface(modifier = Modifier.clickable(enabled = !isRecordingVideo) { if (!isRecordingVideo) lensFacing = if (lensFacing == CameraSelector.LENS_FACING_BACK) CameraSelector.LENS_FACING_FRONT else CameraSelector.LENS_FACING_BACK },
                     color = Color(0x55333333), shape = CircleShape) {
                     Text("↻", color = Color.White, modifier = Modifier.padding(12.dp), style = MaterialTheme.typography.titleLarge)
                 }
@@ -797,8 +795,7 @@ private fun LumaCameraScreen() {
 
 @Composable
 private fun QuickCameraChip(label: String, enabled: Boolean = true, onClick: () -> Unit) {
-    Surface(
-        modifier = Modifier.clickable(enabled = enabled, onClick = onClick),
+    Surface(        modifier = Modifier.clickable(enabled = enabled, onClick = onClick),
         color = if (enabled) Color(0x66383838) else Color(0x33222222),
         shape = RoundedCornerShape(16.dp)
     ) {
