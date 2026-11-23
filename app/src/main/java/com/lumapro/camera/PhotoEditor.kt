@@ -48,6 +48,9 @@ internal fun PhotoEditorDialog(photoUri: Uri, onDismiss: () -> Unit) {
     var blacks by remember(photoUri) { mutableFloatStateOf(0f) }
     var clarity by remember(photoUri) { mutableFloatStateOf(0f) }
     var texture by remember(photoUri) { mutableFloatStateOf(0f) }
+    var sharpening by remember(photoUri) { mutableFloatStateOf(0f) }
+    var noiseReduction by remember(photoUri) { mutableFloatStateOf(0f) }
+    var vignette by remember(photoUri) { mutableFloatStateOf(0f) }
     var processing by remember { mutableStateOf(false) }
     var saving by remember { mutableStateOf(false) }
     var showOriginal by remember { mutableStateOf(false) }
@@ -80,7 +83,7 @@ internal fun PhotoEditorDialog(photoUri: Uri, onDismiss: () -> Unit) {
         edited = source
     }
 
-    LaunchedEffect(source, exposure, contrast, saturation, warmth, tint, vibrance, highlights, shadows, whites, blacks, clarity, texture) {
+    LaunchedEffect(source, exposure, contrast, saturation, warmth, tint, vibrance, highlights, shadows, whites, blacks, clarity, texture, sharpening, noiseReduction, vignette) {
         val original = source ?: return@LaunchedEffect
         delay(100)
         processing = true
@@ -101,6 +104,20 @@ internal fun PhotoEditorDialog(photoUri: Uri, onDismiss: () -> Unit) {
                 var r = ((color shr 16) and 0xFF).toFloat() * gain
                 var g = ((color shr 8) and 0xFF).toFloat() * gain
                 var b = (color and 0xFF).toFloat() * gain
+                val leftPixel = sourcePixels[y * width + (x - 1).coerceAtLeast(0)]
+                val rightPixel = sourcePixels[y * width + (x + 1).coerceAtMost(width - 1)]
+                val topPixel = sourcePixels[(y - 1).coerceAtLeast(0) * width + x]
+                val bottomPixel = sourcePixels[(y + 1).coerceAtMost(height - 1) * width + x]
+                val neighborR = (((leftPixel shr 16) and 255) + ((rightPixel shr 16) and 255) + ((topPixel shr 16) and 255) + ((bottomPixel shr 16) and 255)) * 0.25f
+                val neighborG = (((leftPixel shr 8) and 255) + ((rightPixel shr 8) and 255) + ((topPixel shr 8) and 255) + ((bottomPixel shr 8) and 255)) * 0.25f
+                val neighborB = ((leftPixel and 255) + (rightPixel and 255) + (topPixel and 255) + (bottomPixel and 255)) * 0.25f
+                val noiseMix = noiseReduction * 0.65f
+                val detailR = r - neighborR * gain
+                val detailG = g - neighborG * gain
+                val detailB = b - neighborB * gain
+                r = r * (1f - noiseMix) + neighborR * gain * noiseMix + detailR * sharpening * 0.9f
+                g = g * (1f - noiseMix) + neighborG * gain * noiseMix + detailG * sharpening * 0.9f
+                b = b * (1f - noiseMix) + neighborB * gain * noiseMix + detailB * sharpening * 0.9f
                 val initialLuma = (0.2126f * r + 0.7152f * g + 0.0722f * b).coerceIn(0f, 255f)
                 val normalizedLuma = initialLuma / 255f
                 val shadowMask = (1f - normalizedLuma).pow(2)
@@ -130,6 +147,13 @@ internal fun PhotoEditorDialog(photoUri: Uri, onDismiss: () -> Unit) {
                 r = luma + (r - luma) * colorBoost
                 g = luma + (g - luma) * colorBoost
                 b = luma + (b - luma) * colorBoost
+                val nx = (x - (width - 1) * 0.5f) / (width * 0.5f).coerceAtLeast(1f)
+                val ny = (y - (height - 1) * 0.5f) / (height * 0.5f).coerceAtLeast(1f)
+                val radius = (nx * nx + ny * ny).coerceAtMost(1f)
+                val vignetteFactor = (1f - vignette * 0.72f * radius * radius).coerceAtLeast(0.1f)
+                r *= vignetteFactor
+                g *= vignetteFactor
+                b *= vignetteFactor
                 pixels[i] = (a shl 24) or (r.roundToInt().coerceIn(0, 255) shl 16) or
                     (g.roundToInt().coerceIn(0, 255) shl 8) or b.roundToInt().coerceIn(0, 255)
             }
@@ -164,6 +188,9 @@ internal fun PhotoEditorDialog(photoUri: Uri, onDismiss: () -> Unit) {
                         blacks = 0f
                         clarity = 0f
                         texture = 0f
+                        sharpening = 0f
+                        noiseReduction = 0f
+                        vignette = 0f
                         showOriginal = false
                     }, modifier = Modifier.weight(1f)) { Text("Reset") }
                 }
@@ -179,6 +206,9 @@ internal fun PhotoEditorDialog(photoUri: Uri, onDismiss: () -> Unit) {
                 EditorSlider("Blacks", blacks, -1f..1f, { blacks = it }, if (blacks >= 0) "+" + (blacks * 100).roundToInt() + "%" else "−" + (-blacks * 100).roundToInt() + "%")
                 EditorSlider("Clarity", clarity, -1f..1f, { clarity = it }, if (clarity >= 0) "+" + (clarity * 100).roundToInt() + "%" else "−" + (-clarity * 100).roundToInt() + "%")
                 EditorSlider("Texture", texture, -1f..1f, { texture = it }, if (texture >= 0) "+" + (texture * 100).roundToInt() + "%" else "−" + (-texture * 100).roundToInt() + "%")
+                EditorSlider("Sharpening", sharpening, 0f..1f, { sharpening = it }, (sharpening * 100).roundToInt().toString() + "%")
+                EditorSlider("Noise Reduction", noiseReduction, 0f..1f, { noiseReduction = it }, (noiseReduction * 100).roundToInt().toString() + "%")
+                EditorSlider("Vignette", vignette, 0f..1f, { vignette = it }, (vignette * 100).roundToInt().toString() + "%")
                 EditorSlider("Warmth", warmth, -1f..1f, { warmth = it }, if (warmth >= 0) "Warm +" + (warmth * 100).roundToInt() else "Cool " + (warmth * 100).roundToInt())
                 EditorSlider("Tint", tint, -1f..1f, { tint = it }, if (tint >= 0) "Magenta +" + (tint * 100).roundToInt() else "Green " + (tint * 100).roundToInt())
                 EditorSlider("Vibrance", vibrance, -1f..1f, { vibrance = it }, if (vibrance >= 0) "+" + (vibrance * 100).roundToInt() + "%" else (vibrance * 100).roundToInt().toString() + "%")
