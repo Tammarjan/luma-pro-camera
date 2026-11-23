@@ -136,8 +136,7 @@ private fun LumaCameraScreen() {
         }
 
         if (hasPermission) {
-            androidx.compose.foundation.clickable
-            // The shutter action is provided as a separate accessible button below.
+            // The shutter action is provided as an accessible button.
             Button(
                 modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 34.dp),
                 enabled = imageCapture != null && !isCapturing,
