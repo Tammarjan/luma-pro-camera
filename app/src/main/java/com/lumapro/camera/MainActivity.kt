@@ -230,6 +230,10 @@ private fun LumaCameraScreen() {
     var liveSaturation by remember { mutableFloatStateOf(0f) }
     var liveWarmth by remember { mutableFloatStateOf(0f) }
     var liveTint by remember { mutableFloatStateOf(0f) }
+    var liveDenoise by remember { mutableFloatStateOf(0f) }
+    var liveSharpening by remember { mutableFloatStateOf(0f) }
+    var liveClarity by remember { mutableFloatStateOf(0f) }
+    var liveTexture by remember { mutableFloatStateOf(0f) }
     var selectedLiveLook by remember { mutableStateOf("NATURAL") }
     var zoomRatio by remember { mutableStateOf(1f) }
     var minZoomRatio by remember { mutableStateOf(1f) }
@@ -342,6 +346,10 @@ private fun LumaCameraScreen() {
                 liveSaturation = liveSaturation,
                 liveWarmth = liveWarmth,
                 liveTint = liveTint,
+                liveDenoise = liveDenoise,
+                liveSharpening = liveSharpening,
+                liveClarity = liveClarity,
+                liveTexture = liveTexture,
                 jpegQuality = jpegQuality,
                 maximizeQuality = maximizeQuality,
                 rawCaptureEnabled = rawCaptureEnabled,
@@ -636,6 +644,10 @@ private fun LumaCameraScreen() {
                                 liveSaturation = 0f
                                 liveWarmth = 0f
                                 liveTint = 0f
+                                liveDenoise = 0f
+                                liveSharpening = 0f
+                                liveClarity = 0f
+                                liveTexture = 0f
                                 selectedLiveLook = "NATURAL"
                             }
                         }
@@ -665,7 +677,16 @@ private fun LumaCameraScreen() {
                         Slider(value = liveWarmth, onValueChange = { liveWarmth = it }, valueRange = -1f..1f)
                         Text("LIVE TINT  " + (liveTint * 100).roundToInt() + "%", color = Color.White, style = MaterialTheme.typography.labelSmall)
                         Slider(value = liveTint, onValueChange = { liveTint = it }, valueRange = -1f..1f)
-                        Text(if (rawCaptureEnabled && rawJpegSupported) "Live preview/video effects; RAW capture stays unprocessed." else "Live effects apply to preview, video and JPEG capture.", color = Color(0xFFFFD54F), style = MaterialTheme.typography.labelSmall)
+                        Text("DETAIL PROCESSING", color = Color(0xFFFFD54F), style = MaterialTheme.typography.labelSmall)
+                        Text("DENOISE  ${(liveDenoise * 100).roundToInt()}%", color = Color.White, style = MaterialTheme.typography.labelSmall)
+                        Slider(value = liveDenoise, onValueChange = { liveDenoise = it }, valueRange = 0f..1f)
+                        Text("SHARPENING  ${(liveSharpening * 100).roundToInt()}%", color = Color.White, style = MaterialTheme.typography.labelSmall)
+                        Slider(value = liveSharpening, onValueChange = { liveSharpening = it }, valueRange = 0f..1f)
+                        Text("CLARITY  ${(liveClarity * 100).roundToInt()}%", color = Color.White, style = MaterialTheme.typography.labelSmall)
+                        Slider(value = liveClarity, onValueChange = { liveClarity = it }, valueRange = 0f..1f)
+                        Text("TEXTURE  ${(liveTexture * 100).roundToInt()}%", color = Color.White, style = MaterialTheme.typography.labelSmall)
+                        Slider(value = liveTexture, onValueChange = { liveTexture = it }, valueRange = 0f..1f)
+                        Text(if (rawCaptureEnabled && rawJpegSupported) "Live detail applies to preview/video; RAW stays unprocessed." else "Detail processing is applied through the live GPU pipeline.", color = Color(0xFFFFD54F), style = MaterialTheme.typography.labelSmall)
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                             Text("Capture timer", color = Color.White, style = MaterialTheme.typography.labelSmall)
                             Text(if (captureTimerSeconds == 0) "Off" else "${captureTimerSeconds}s", color = Color.LightGray, style = MaterialTheme.typography.labelSmall)
@@ -1123,6 +1144,10 @@ private fun CameraPreview(
     liveSaturation: Float,
     liveWarmth: Float,
     liveTint: Float,
+    liveDenoise: Float,
+    liveSharpening: Float,
+    liveClarity: Float,
+    liveTexture: Float,
     jpegQuality: Int,
     maximizeQuality: Boolean,
     rawCaptureEnabled: Boolean,
@@ -1146,7 +1171,7 @@ private fun CameraPreview(
     var activeMedia3Effect by remember { mutableStateOf<Media3Effect?>(null) }
     SideEffect {
         activeMedia3Effect?.setEffects(
-            listOf(Brightness(liveBrightness.coerceIn(-1f, 1f)), Contrast(liveContrast.coerceIn(-1f, 1f)), HslAdjustment.Builder().adjustSaturation((liveSaturation * 100f).coerceIn(-100f, 100f)).build(), RgbAdjustment.Builder().setRedScale((1f + liveWarmth * 0.16f + liveTint * 0.07f).coerceIn(0.75f, 1.25f)).setGreenScale((1f - liveTint * 0.12f).coerceIn(0.75f, 1.25f)).setBlueScale((1f - liveWarmth * 0.16f + liveTint * 0.07f).coerceIn(0.75f, 1.25f)).build())
+            listOf(Brightness(liveBrightness.coerceIn(-1f, 1f)), Contrast(liveContrast.coerceIn(-1f, 1f)), HslAdjustment.Builder().adjustSaturation((liveSaturation * 100f).coerceIn(-100f, 100f)).build(), RgbAdjustment.Builder().setRedScale((1f + liveWarmth * 0.16f + liveTint * 0.07f).coerceIn(0.75f, 1.25f)).setGreenScale((1f - liveTint * 0.12f).coerceIn(0.75f, 1.25f)).setBlueScale((1f - liveWarmth * 0.16f + liveTint * 0.07f).coerceIn(0.75f, 1.25f)).build(), LiveDetailEffect(liveDenoise, liveSharpening, liveClarity, liveTexture))
         )
     }
     AndroidView(
@@ -1181,7 +1206,7 @@ private fun CameraPreview(
                 effectExecutor
             ) { error ->
                 android.util.Log.e("LumaProCamera", "Live GPU effect failed", error)
-            }.also { it.setEffects(listOf(Brightness(liveBrightness), Contrast(liveContrast), HslAdjustment.Builder().adjustSaturation((liveSaturation * 100f).coerceIn(-100f, 100f)).build(), RgbAdjustment.Builder().setRedScale((1f + liveWarmth * 0.16f + liveTint * 0.07f).coerceIn(0.75f, 1.25f)).setGreenScale((1f - liveTint * 0.12f).coerceIn(0.75f, 1.25f)).setBlueScale((1f - liveWarmth * 0.16f + liveTint * 0.07f).coerceIn(0.75f, 1.25f)).build())) }
+            }.also { it.setEffects(listOf(Brightness(liveBrightness), Contrast(liveContrast), HslAdjustment.Builder().adjustSaturation((liveSaturation * 100f).coerceIn(-100f, 100f)).build(), RgbAdjustment.Builder().setRedScale((1f + liveWarmth * 0.16f + liveTint * 0.07f).coerceIn(0.75f, 1.25f)).setGreenScale((1f - liveTint * 0.12f).coerceIn(0.75f, 1.25f)).setBlueScale((1f - liveWarmth * 0.16f + liveTint * 0.07f).coerceIn(0.75f, 1.25f)).build(), LiveDetailEffect(liveDenoise, liveSharpening, liveClarity, liveTexture))) }
         }.getOrNull()
         activeMedia3Effect = media3Effect
         val lastAnalysisUpdate = java.util.concurrent.atomic.AtomicLong(0L)
