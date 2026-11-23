@@ -88,6 +88,7 @@ internal fun PhotoEditorDialog(photoUri: Uri, onDismiss: () -> Unit) {
             val output = Bitmap.createBitmap(original.width, original.height, Bitmap.Config.ARGB_8888)
             val pixels = IntArray(original.width * original.height)
             original.getPixels(pixels, 0, original.width, 0, 0, original.width, original.height)
+            val sourcePixels = pixels.copyOf()
             val gain = 2.0.pow(exposure.toDouble()).toFloat()
             val highlightAmount = highlights
             val shadowAmount = shadows
@@ -110,7 +111,7 @@ internal fun PhotoEditorDialog(photoUri: Uri, onDismiss: () -> Unit) {
                 val whiteBlackAdjustment = (whiteMask * whites + blackMask * blacks) * 68f
                 val x = i % width
                 val y = i / width
-                fun sampleLuma(sx: Int, sy: Int): Float = pixelLuma(pixels[sy.coerceIn(0, height - 1) * width + sx.coerceIn(0, width - 1)])
+                fun sampleLuma(sx: Int, sy: Int): Float = pixelLuma(sourcePixels[sy.coerceIn(0, height - 1) * width + sx.coerceIn(0, width - 1)])
                 val textureAverage = (sampleLuma(x - 2, y) + sampleLuma(x + 2, y) + sampleLuma(x, y - 2) + sampleLuma(x, y + 2)) * 0.25f
                 val clarityAverage = (sampleLuma(x - 7, y) + sampleLuma(x + 7, y) + sampleLuma(x, y - 7) + sampleLuma(x, y + 7)) * 0.25f
                 val textureDetail = (initialLuma - textureAverage) * texture * 0.45f
