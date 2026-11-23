@@ -101,6 +101,12 @@ private fun LumaCameraScreen() {
     var shutterMinNs by remember { mutableLongStateOf(125_000L) }
     var shutterMaxNs by remember { mutableLongStateOf(1_000_000_000L) }
     var shutterValueNs by remember { mutableLongStateOf(8_333_333L) }
+    var manualFocusSupported by remember { mutableStateOf(false) }
+    var focusDistanceMax by remember { mutableStateOf(0f) }
+    var focusDistance by remember { mutableStateOf(0f) }
+    var manualFocusEnabled by remember { mutableStateOf(false) }
+    var supportedWbModes by remember { mutableStateOf(listOf(CaptureRequest.CONTROL_AWB_MODE_AUTO)) }
+    var selectedWbMode by remember { mutableIntStateOf(CaptureRequest.CONTROL_AWB_MODE_AUTO) }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -116,6 +122,8 @@ private fun LumaCameraScreen() {
                     imageCapture = readyCapture
                     manualExposureEnabled = false
                     manualSensorSupported = false
+                    manualFocusEnabled = false
+                    manualFocusSupported = false
                     if (readyCamera != null) {
                         val range = readyCamera.cameraInfo.exposureState.exposureCompensationRange
                         exposureMin = range.lower
@@ -124,6 +132,26 @@ private fun LumaCameraScreen() {
                         zoomRatio = 1f
                         runCatching {
                             val info = Camera2CameraInfo.from(readyCamera.cameraInfo)
+                            val minFocus = info.getCameraCharacteristic(
+                                CameraCharacteristics.LENS_INFO_MINIMUM_FOCUS_DISTANCE
+                            ) ?: 0f
+                            focusDistanceMax = minFocus
+                            manualFocusSupported = minFocus > 0f
+                            focusDistance = 0f
+                            val afModes = info.getCameraCharacteristic(
+                                CameraCharacteristics.CONTROL_AF_AVAILABLE_MODES
+                            )
+                            manualFocusSupported = manualFocusSupported &&
+                                afModes?.contains(CaptureRequest.CONTROL_AF_MODE_OFF) == true
+                            val awbModes = info.getCameraCharacteristic(
+                                CameraCharacteristics.CONTROL_AWB_AVAILABLE_MODES
+                            )
+                            supportedWbModes = awbModes?.toList()
+                                ?: listOf(CaptureRequest.CONTROL_AWB_MODE_AUTO)
+                            if (!supportedWbModes.contains(CaptureRequest.CONTROL_AWB_MODE_AUTO)) {
+                                supportedWbModes = listOf(CaptureRequest.CONTROL_AWB_MODE_AUTO) + supportedWbModes
+                            }
+                            selectedWbMode = CaptureRequest.CONTROL_AWB_MODE_AUTO
                             val capabilities = info.getCameraCharacteristic(
                                 CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES
                             )
@@ -250,6 +278,54 @@ private fun LumaCameraScreen() {
             } else {
                 Text("Manual ISO / shutter not supported by this camera", color = Color.LightGray, style = MaterialTheme.typography.labelSmall)
             }
+            if (manualFocusSupported) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        if (manualFocusEnabled) "MANUAL FOCUS" else "FOCUS AUTO",
+                        color = Color.White,
+                        style = MaterialTheme.typography.labelMedium
+                    )
+                    Button(onClick = {
+                        manualFocusEnabled = !manualFocusEnabled
+                        if (manualFocusEnabled) {
+                            setManualFocus(camera, focusDistance)
+                        } else {
+                            setAutoFocus(camera)
+                            focusDistance = 0f
+                        }
+                    }) { Text(if (manualFocusEnabled) "AUTO FOCUS" else "MANUAL") }
+                }
+                Slider(
+                    value = focusDistance.coerceIn(0f, focusDistanceMax),
+                    onValueChange = {
+                        focusDistance = it
+                        if (manualFocusEnabled) setManualFocus(camera, it)
+                    },
+                    valueRange = 0f..focusDistanceMax,
+                    enabled = manualFocusEnabled && focusDistanceMax > 0f
+                )
+            } else {
+                Text("Manual focus unavailable on this camera", color = Color.LightGray, style = MaterialTheme.typography.labelSmall)
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("WHITE BALANCE", color = Color.White, style = MaterialTheme.typography.labelMedium)
+                Button(onClick = {
+                    val modes = supportedWbModes
+                    val current = modes.indexOf(selectedWbMode).coerceAtLeast(0)
+                    selectedWbMode = modes[(current + 1) % modes.size]
+                    setWhiteBalance(camera, selectedWbMode)
+                }, enabled = camera != null) {
+                    Text(whiteBalanceName(selectedWbMode))
+                }
+            }
             Row(
                 modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp),
                 horizontalArrangement = Arrangement.SpaceEvenly,
@@ -328,6 +404,50 @@ private fun LumaCameraScreen() {
     }
 }
 
+
+
+private fun setManualFocus(camera: Camera?, distance: Float) {
+    val activeCamera = camera ?: return
+    runCatching {
+        val options = CaptureRequestOptions.Builder()
+            .setCaptureRequestOption(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_OFF)
+            .setCaptureRequestOption(CaptureRequest.LENS_FOCUS_DISTANCE, distance)
+            .build()
+        Camera2CameraControl.from(activeCamera.cameraControl).setCaptureRequestOptions(options)
+    }
+}
+
+private fun setAutoFocus(camera: Camera?) {
+    val activeCamera = camera ?: return
+    runCatching {
+        val options = CaptureRequestOptions.Builder()
+            .setCaptureRequestOption(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE)
+            .build()
+        Camera2CameraControl.from(activeCamera.cameraControl).setCaptureRequestOptions(options)
+    }
+}
+
+private fun setWhiteBalance(camera: Camera?, mode: Int) {
+    val activeCamera = camera ?: return
+    runCatching {
+        val options = CaptureRequestOptions.Builder()
+            .setCaptureRequestOption(CaptureRequest.CONTROL_AWB_MODE, mode)
+            .build()
+        Camera2CameraControl.from(activeCamera.cameraControl).setCaptureRequestOptions(options)
+    }
+}
+
+private fun whiteBalanceName(mode: Int): String = when (mode) {
+    CaptureRequest.CONTROL_AWB_MODE_AUTO -> "Auto"
+    CaptureRequest.CONTROL_AWB_MODE_INCANDESCENT -> "Incandescent"
+    CaptureRequest.CONTROL_AWB_MODE_FLUORESCENT -> "Fluorescent"
+    CaptureRequest.CONTROL_AWB_MODE_WARM_FLUORESCENT -> "Warm"
+    CaptureRequest.CONTROL_AWB_MODE_DAYLIGHT -> "Daylight"
+    CaptureRequest.CONTROL_AWB_MODE_CLOUDY_DAYLIGHT -> "Cloudy"
+    CaptureRequest.CONTROL_AWB_MODE_TWILIGHT -> "Twilight"
+    CaptureRequest.CONTROL_AWB_MODE_SHADE -> "Shade"
+    else -> "WB $mode"
+}
 
 private fun shutterToFraction(value: Long, min: Long, max: Long): Float {
     if (max <= min || min <= 0L) return 0f
