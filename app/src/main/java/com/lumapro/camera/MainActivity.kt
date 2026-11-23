@@ -4,6 +4,8 @@ import android.Manifest
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CaptureRequest
 import android.content.ContentValues
+import android.content.Intent
+import android.net.Uri
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.provider.MediaStore
@@ -26,6 +28,10 @@ import androidx.camera.core.resolutionselector.ResolutionSelector
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -39,6 +45,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Button
+import androidx.compose.material3.Dialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
@@ -46,6 +53,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
@@ -55,6 +63,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.input.pointer.pointerInput
@@ -71,6 +80,9 @@ import kotlin.math.exp
 import kotlin.math.ln
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import coil.compose.AsyncImage
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -86,8 +98,39 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
+private data class GalleryPhoto(val uri: Uri, val name: String)
+
+@Composable
 private fun LumaCameraScreen() {
     val context = LocalContext.current
+    var showGallery by remember { mutableStateOf(false) }
+    var galleryPhotos by remember { mutableStateOf<List<GalleryPhoto>>(emptyList()) }
+    LaunchedEffect(showGallery) {
+        if (showGallery) {
+            galleryPhotos = withContext(Dispatchers.IO) {
+                val photos = mutableListOf<GalleryPhoto>()
+                val projection = arrayOf(MediaStore.Images.Media._ID, MediaStore.Images.Media.DISPLAY_NAME)
+                val selection = "${MediaStore.Images.Media.DISPLAY_NAME} LIKE ?"
+                context.contentResolver.query(
+                    MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                    projection,
+                    selection,
+                    arrayOf("Luma_%"),
+                    "${MediaStore.Images.Media.DATE_ADDED} DESC"
+                )?.use { cursor ->
+                    val idColumn = cursor.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
+                    val nameColumn = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DISPLAY_NAME)
+                    while (cursor.moveToNext()) {
+                        val id = cursor.getLong(idColumn)
+                        val name = cursor.getString(nameColumn) ?: "Photo"
+                        val uri = Uri.withAppendedPath(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, id.toString())
+                        photos.add(GalleryPhoto(uri, name))
+                    }
+                }
+                photos
+            }
+        }
+    }
     var hasPermission by remember {
         mutableStateOf(
             ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
@@ -238,7 +281,14 @@ private fun LumaCameraScreen() {
             modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth()
                 .background(Color(0x77000000)).padding(horizontal = 20.dp, vertical = 16.dp)
         ) {
-            Text("LUMA PRO", color = Color.White, style = MaterialTheme.typography.titleLarge)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("LUMA PRO", color = Color.White, style = MaterialTheme.typography.titleLarge)
+                Button(onClick = { showGallery = true }) { Text("Gallery") }
+            }
             Text(
                 if (lensFacing == CameraSelector.LENS_FACING_BACK) "REAR CAMERA  •  ${if (rawCaptureEnabled && rawJpegSupported) "RAW + JPEG" else "JPEG"}"
                 else "FRONT CAMERA  •  ${if (rawCaptureEnabled && rawJpegSupported) "RAW + JPEG" else "JPEG"}",
@@ -525,6 +575,51 @@ private fun LumaCameraScreen() {
                     if (rawJpegSupported) {
                         Button(onClick = { rawCaptureEnabled = !rawCaptureEnabled }) {
                             Text(if (rawCaptureEnabled) "RAW ON" else "RAW OFF")
+                        }
+                    }
+                }
+            }
+        }
+        if (showGallery) {
+            Dialog(onDismissRequest = { showGallery = false }) {
+                Column(
+                    modifier = Modifier.fillMaxSize().background(Color(0xFF101010)).padding(16.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Luma Gallery", color = Color.White, style = MaterialTheme.typography.titleLarge)
+                        Button(onClick = { showGallery = false }) { Text("Close") }
+                    }
+                    Text("${galleryPhotos.size} photos", color = Color.LightGray)
+                    Spacer(Modifier.height(12.dp))
+                    if (galleryPhotos.isEmpty()) {
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Text("No Luma photos yet", color = Color.White)
+                        }
+                    } else {
+                        LazyVerticalGrid(
+                            columns = GridCells.Fixed(3),
+                            modifier = Modifier.fillMaxSize(),
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            items(galleryPhotos, key = { it.uri.toString() }) { photo ->
+                                AsyncImage(
+                                    model = photo.uri,
+                                    contentDescription = photo.name,
+                                    modifier = Modifier.fillMaxWidth().height(116.dp).clickable {
+                                        val intent = Intent(Intent.ACTION_VIEW).apply {
+                                            setDataAndType(photo.uri, "image/*")
+                                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                        }
+                                        runCatching { context.startActivity(intent) }
+                                    },
+                                    contentScale = ContentScale.Crop
+                                )
+                            }
                         }
                     }
                 }
