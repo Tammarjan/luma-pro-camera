@@ -458,7 +458,7 @@ private fun LumaCameraScreen() {
         }
 
         // Compact professional top bar
-        Row(
+        if (hasPermission) Row(
             modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth()
                 .background(Color(0xB8000000)).padding(horizontal = 16.dp, vertical = 10.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -486,7 +486,7 @@ private fun LumaCameraScreen() {
         }
 
         // Small quick-access strip, kept away from the viewfinder center
-        Row(
+        if (hasPermission) Row(
             modifier = Modifier.align(Alignment.TopCenter).padding(top = 66.dp)
                 .background(Color(0x66000000), RoundedCornerShape(22.dp)).padding(horizontal = 8.dp, vertical = 5.dp),
             horizontalArrangement = Arrangement.spacedBy(7.dp),
@@ -503,10 +503,11 @@ private fun LumaCameraScreen() {
         }
 
         // Professional bottom control deck: shooting controls stay visible, adjustments are tabbed
-        Column(
+        if (hasPermission) Column(
             modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth()
+                .heightIn(max = 420.dp).verticalScroll(rememberScrollState())
                 .background(Color(0xE6101010), RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
-                .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 12.dp),
+                .padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 10.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
@@ -592,7 +593,11 @@ private fun LumaCameraScreen() {
                                             }
                                         }
                                     }
-                                }.onFailure { isRecordingVideo = false; Toast.makeText(context, "Unable to start video", Toast.LENGTH_SHORT).show() }
+                                }.onFailure { error ->
+                                    isRecordingVideo = false
+                                    Toast.makeText(context, "Video start failed: " + (error.localizedMessage ?: error.javaClass.simpleName), Toast.LENGTH_LONG).show()
+                                    android.util.Log.e("LumaProCamera", "Unable to start video recording", error)
+                                }
                             }
                         }
                     ) { Text(if (videoMode) if (isRecordingVideo) "■" else "●" else if (timerCountdown > 0) timerCountdown.toString() else if (isCapturing) "…" else "●", style = MaterialTheme.typography.headlineMedium) }
@@ -613,7 +618,7 @@ private fun LumaCameraScreen() {
                 }
             }
 
-            Column(Modifier.fillMaxWidth().heightIn(max = 172.dp).verticalScroll(rememberScrollState())) {
+            Column(Modifier.fillMaxWidth().heightIn(max = 112.dp).verticalScroll(rememberScrollState())) {
                 when (cameraPanelTab) {
                     0 -> {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
@@ -714,6 +719,19 @@ private fun LumaCameraScreen() {
                         }
                     }
                 }
+            }
+        }
+        if (!hasPermission) {
+            Column(
+                modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.96f)).padding(28.dp),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text("LUMA CAMERA", color = Color.White, style = MaterialTheme.typography.headlineSmall)
+                Spacer(Modifier.height(12.dp))
+                Text("Camera access is needed to show the viewfinder and take photos or videos.", color = Color.LightGray, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                Spacer(Modifier.height(20.dp))
+                Button(onClick = { permissionLauncher.launch(Manifest.permission.CAMERA) }) { Text("ALLOW CAMERA") }
             }
         }
         if (showGallery) {
@@ -1259,11 +1277,11 @@ private fun CameraPreview(
                     }
                 } else {
                     try {
-                        val groupBuilder = UseCaseGroup.Builder().addUseCase(preview).addUseCase(capture)
+                        val groupBuilder = UseCaseGroup.Builder().addUseCase(preview).addUseCase(capture).addUseCase(video)
                         if (media3Effect != null) groupBuilder.addEffect(media3Effect)
                         boundCamera = cameraProvider.bindToLifecycle(lifecycleOwner, selector, groupBuilder.build())
                     } catch (_: Exception) {
-                        boundCamera = cameraProvider.bindToLifecycle(lifecycleOwner, selector, preview, capture)
+                        boundCamera = cameraProvider.bindToLifecycle(lifecycleOwner, selector, preview, capture, video)
                     }
                     onAnalysis(List(32) { 0f }, 0f, emptyList(), emptyList())
                 }
