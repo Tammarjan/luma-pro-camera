@@ -40,6 +40,8 @@ internal fun PhotoEditorDialog(photoUri: Uri, onDismiss: () -> Unit) {
     var contrast by remember(photoUri) { mutableFloatStateOf(1f) }
     var saturation by remember(photoUri) { mutableFloatStateOf(1f) }
     var warmth by remember(photoUri) { mutableFloatStateOf(0f) }
+    var tint by remember(photoUri) { mutableFloatStateOf(0f) }
+    var vibrance by remember(photoUri) { mutableFloatStateOf(0f) }
     var highlights by remember(photoUri) { mutableFloatStateOf(0f) }
     var shadows by remember(photoUri) { mutableFloatStateOf(0f) }
     var processing by remember { mutableStateOf(false) }
@@ -74,7 +76,7 @@ internal fun PhotoEditorDialog(photoUri: Uri, onDismiss: () -> Unit) {
         edited = source
     }
 
-    LaunchedEffect(source, exposure, contrast, saturation, warmth, highlights, shadows) {
+    LaunchedEffect(source, exposure, contrast, saturation, warmth, tint, vibrance, highlights, shadows) {
         val original = source ?: return@LaunchedEffect
         delay(100)
         processing = true
@@ -99,13 +101,16 @@ internal fun PhotoEditorDialog(photoUri: Uri, onDismiss: () -> Unit) {
                 r += toneAdjustment
                 g += toneAdjustment
                 b += toneAdjustment
-                r = (r - 128f) * contrast + 128f + warmth * 24f
-                g = (g - 128f) * contrast + 128f
-                b = (b - 128f) * contrast + 128f - warmth * 24f
+                r = (r - 128f) * contrast + 128f + warmth * 24f + tint * 12f
+                g = (g - 128f) * contrast + 128f - tint * 18f
+                b = (b - 128f) * contrast + 128f - warmth * 24f + tint * 12f
                 val luma = 0.2126f * r + 0.7152f * g + 0.0722f * b
-                r = luma + (r - luma) * saturation
-                g = luma + (g - luma) * saturation
-                b = luma + (b - luma) * saturation
+                val chroma = (maxOf(r, g, b) - minOf(r, g, b)).coerceIn(0f, 255f) / 255f
+                val vibranceBoost = 1f + vibrance * (1f - chroma)
+                val colorBoost = saturation * vibranceBoost
+                r = luma + (r - luma) * colorBoost
+                g = luma + (g - luma) * colorBoost
+                b = luma + (b - luma) * colorBoost
                 pixels[i] = (a shl 24) or (r.roundToInt().coerceIn(0, 255) shl 16) or
                     (g.roundToInt().coerceIn(0, 255) shl 8) or b.roundToInt().coerceIn(0, 255)
             }
@@ -132,6 +137,8 @@ internal fun PhotoEditorDialog(photoUri: Uri, onDismiss: () -> Unit) {
                         contrast = 1f
                         saturation = 1f
                         warmth = 0f
+                        tint = 0f
+                        vibrance = 0f
                         highlights = 0f
                         shadows = 0f
                         showOriginal = false
@@ -146,6 +153,8 @@ internal fun PhotoEditorDialog(photoUri: Uri, onDismiss: () -> Unit) {
                 EditorSlider("Highlights", highlights, -1f..1f, { highlights = it }, if (highlights >= 0) "−" + (highlights * 100).roundToInt() + "%" else "+" + (-highlights * 100).roundToInt() + "%")
                 EditorSlider("Shadows", shadows, -1f..1f, { shadows = it }, if (shadows >= 0) "+" + (shadows * 100).roundToInt() + "%" else "−" + (-shadows * 100).roundToInt() + "%")
                 EditorSlider("Warmth", warmth, -1f..1f, { warmth = it }, if (warmth >= 0) "Warm +" + (warmth * 100).roundToInt() else "Cool " + (warmth * 100).roundToInt())
+                EditorSlider("Tint", tint, -1f..1f, { tint = it }, if (tint >= 0) "Magenta +" + (tint * 100).roundToInt() else "Green " + (tint * 100).roundToInt())
+                EditorSlider("Vibrance", vibrance, -1f..1f, { vibrance = it }, if (vibrance >= 0) "+" + (vibrance * 100).roundToInt() + "%" else (vibrance * 100).roundToInt().toString() + "%")
                 Text("Original photo remains unchanged. Edited copy is saved separately.", color = Color.LightGray, style = MaterialTheme.typography.bodySmall)
             }
         },
