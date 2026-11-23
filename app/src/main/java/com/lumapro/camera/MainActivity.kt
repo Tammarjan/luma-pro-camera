@@ -28,6 +28,8 @@ import androidx.camera.media3.effect.Media3Effect
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.Brightness
 import androidx.media3.effect.Contrast
+import androidx.media3.effect.HslAdjustment
+import androidx.media3.effect.RgbAdjustment
 import androidx.camera.core.CameraSelector
 import androidx.camera.camera2.interop.Camera2CameraControl
 import androidx.camera.camera2.interop.Camera2CameraInfo
@@ -223,6 +225,9 @@ private fun LumaCameraScreen() {
     var exposureIndex by remember { mutableIntStateOf(0) }
     var liveBrightness by remember { mutableFloatStateOf(0f) }
     var liveContrast by remember { mutableFloatStateOf(0f) }
+    var liveSaturation by remember { mutableFloatStateOf(0f) }
+    var liveWarmth by remember { mutableFloatStateOf(0f) }
+    var liveTint by remember { mutableFloatStateOf(0f) }
     var zoomRatio by remember { mutableStateOf(1f) }
     var minZoomRatio by remember { mutableStateOf(1f) }
     var maxZoomRatio by remember { mutableStateOf(1f) }
@@ -331,6 +336,9 @@ private fun LumaCameraScreen() {
                 lensFacing = lensFacing,
                 liveBrightness = liveBrightness,
                 liveContrast = liveContrast,
+                liveSaturation = liveSaturation,
+                liveWarmth = liveWarmth,
+                liveTint = liveTint,
                 jpegQuality = jpegQuality,
                 maximizeQuality = maximizeQuality,
                 rawCaptureEnabled = rawCaptureEnabled,
@@ -620,6 +628,12 @@ private fun LumaCameraScreen() {
                         Slider(value = liveBrightness, onValueChange = { liveBrightness = it }, valueRange = -1f..1f)
                         Text("LIVE CONTRAST  ${(liveContrast * 100).roundToInt()}%", color = Color.White, style = MaterialTheme.typography.labelSmall)
                         Slider(value = liveContrast, onValueChange = { liveContrast = it }, valueRange = -1f..1f)
+                        Text("LIVE SATURATION  " + (liveSaturation * 100).roundToInt() + "%", color = Color.White, style = MaterialTheme.typography.labelSmall)
+                        Slider(value = liveSaturation, onValueChange = { liveSaturation = it }, valueRange = -1f..1f)
+                        Text("LIVE WARMTH  " + (liveWarmth * 100).roundToInt() + "%", color = Color.White, style = MaterialTheme.typography.labelSmall)
+                        Slider(value = liveWarmth, onValueChange = { liveWarmth = it }, valueRange = -1f..1f)
+                        Text("LIVE TINT  " + (liveTint * 100).roundToInt() + "%", color = Color.White, style = MaterialTheme.typography.labelSmall)
+                        Slider(value = liveTint, onValueChange = { liveTint = it }, valueRange = -1f..1f)
                         Text(if (rawCaptureEnabled && rawJpegSupported) "Live preview/video effects; RAW capture stays unprocessed." else "Live effects apply to preview, video and JPEG capture.", color = Color(0xFFFFD54F), style = MaterialTheme.typography.labelSmall)
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                             Text("Capture timer", color = Color.White, style = MaterialTheme.typography.labelSmall)
@@ -1061,6 +1075,9 @@ private fun CameraPreview(
     lensFacing: Int,
     liveBrightness: Float,
     liveContrast: Float,
+    liveSaturation: Float,
+    liveWarmth: Float,
+    liveTint: Float,
     jpegQuality: Int,
     maximizeQuality: Boolean,
     rawCaptureEnabled: Boolean,
@@ -1084,7 +1101,7 @@ private fun CameraPreview(
     var activeMedia3Effect by remember { mutableStateOf<Media3Effect?>(null) }
     SideEffect {
         activeMedia3Effect?.setEffects(
-            listOf(Brightness(liveBrightness.coerceIn(-1f, 1f)), Contrast(liveContrast.coerceIn(-1f, 1f)))
+            listOf(Brightness(liveBrightness.coerceIn(-1f, 1f)), Contrast(liveContrast.coerceIn(-1f, 1f)), HslAdjustment.Builder().adjustSaturation((liveSaturation * 100f).coerceIn(-100f, 100f)).build(), RgbAdjustment.Builder().setRedScale((1f + liveWarmth * 0.16f + liveTint * 0.07f).coerceIn(0.75f, 1.25f)).setGreenScale((1f - liveTint * 0.12f).coerceIn(0.75f, 1.25f)).setBlueScale((1f - liveWarmth * 0.16f + liveTint * 0.07f).coerceIn(0.75f, 1.25f)).build())
         )
     }
     AndroidView(
@@ -1119,7 +1136,7 @@ private fun CameraPreview(
                 effectExecutor
             ) { error ->
                 android.util.Log.e("LumaProCamera", "Live GPU effect failed", error)
-            }.also { it.setEffects(listOf(Brightness(liveBrightness), Contrast(liveContrast))) }
+            }.also { it.setEffects(listOf(Brightness(liveBrightness), Contrast(liveContrast), HslAdjustment.Builder().adjustSaturation((liveSaturation * 100f).coerceIn(-100f, 100f)).build(), RgbAdjustment.Builder().setRedScale((1f + liveWarmth * 0.16f + liveTint * 0.07f).coerceIn(0.75f, 1.25f)).setGreenScale((1f - liveTint * 0.12f).coerceIn(0.75f, 1.25f)).setBlueScale((1f - liveWarmth * 0.16f + liveTint * 0.07f).coerceIn(0.75f, 1.25f)).build())) }
         }.getOrNull()
         activeMedia3Effect = media3Effect
         val lastAnalysisUpdate = java.util.concurrent.atomic.AtomicLong(0L)
