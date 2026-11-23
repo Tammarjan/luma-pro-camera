@@ -28,6 +28,8 @@ import androidx.camera.camera2.interop.Camera2CameraInfo
 import androidx.camera.camera2.interop.CaptureRequestOptions
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
+import androidx.camera.core.ImageAnalysis
+import androidx.camera.core.ImageProxy
 import androidx.camera.core.FocusMeteringAction
 import androidx.camera.core.Preview
 import androidx.camera.core.resolutionselector.AspectRatioStrategy
@@ -197,6 +199,9 @@ private fun LumaCameraScreen() {
     var flashAvailable by remember { mutableStateOf(false) }
     var flashEnabled by remember { mutableStateOf(false) }
     var gridEnabled by remember { mutableStateOf(false) }
+    var histogramEnabled by remember { mutableStateOf(false) }
+    var liveHistogram by remember { mutableStateOf(List(32) { 0f }) }
+    var highlightClipping by remember { mutableFloatStateOf(0f) }
     var levelEnabled by remember { mutableStateOf(false) }
     var focusLockEnabled by remember { mutableStateOf(false) }
     var rollDegrees by remember { mutableFloatStateOf(0f) }
@@ -294,6 +299,8 @@ private fun LumaCameraScreen() {
                 maximizeQuality = maximizeQuality,
                 rawCaptureEnabled = rawCaptureEnabled,
                 aspectRatioWide = aspectRatioWide,
+                analysisEnabled = histogramEnabled,
+                onHistogram = { bins, clipping -> liveHistogram = bins; highlightClipping = clipping },
                 onCameraReady = { readyCamera, readyCapture ->
                     camera = readyCamera
                     imageCapture = readyCapture
@@ -373,6 +380,7 @@ private fun LumaCameraScreen() {
                 }
             )
             if (gridEnabled) RuleOfThirdsGrid(Modifier.fillMaxSize())
+            if (histogramEnabled) LiveHistogramOverlay(liveHistogram, highlightClipping, Modifier.align(Alignment.BottomEnd).padding(end = 14.dp, bottom = 190.dp))
             if (levelEnabled) {
                 Canvas(
                     modifier = Modifier.align(Alignment.Center).size(width = 150.dp, height = 36.dp)
@@ -640,6 +648,9 @@ private fun LumaCameraScreen() {
                 }
                 Button(onClick = { gridEnabled = !gridEnabled }) {
                     Text(if (gridEnabled) "Grid ON" else "Grid OFF")
+                }
+                Button(onClick = { histogramEnabled = !histogramEnabled }) {
+                    Text(if (histogramEnabled) "Histogram ON" else "Histogram")
                 }
                 Button(onClick = { levelEnabled = !levelEnabled }) {
                     Text(if (levelEnabled) "Level ON" else "Level OFF")
@@ -1054,6 +1065,8 @@ private fun CameraPreview(
     maximizeQuality: Boolean,
     rawCaptureEnabled: Boolean,
     aspectRatioWide: Boolean,
+    analysisEnabled: Boolean,
+    onHistogram: (List<Float>, Float) -> Unit,
     onCameraReady: (Camera?, ImageCapture?) -> Unit,
     onTapFocus: () -> Unit,
     onRawCapabilityChanged: (Boolean) -> Unit
@@ -1087,7 +1100,7 @@ private fun CameraPreview(
         factory = { previewView }
     )
 
-    DisposableEffect(previewView, lifecycleOwner, lensFacing, jpegQuality, maximizeQuality, rawCaptureEnabled, aspectRatioWide) {
+    DisposableEffect(previewView, lifecycleOwner, lensFacing, jpegQuality, maximizeQuality, rawCaptureEnabled, aspectRatioWide, analysisEnabled) {
         val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
         val executor = ContextCompat.getMainExecutor(context)
         cameraProviderFuture.addListener({
@@ -1118,12 +1131,68 @@ private fun CameraPreview(
                 val capture = captureBuilder.build()
 
                 cameraProvider.unbindAll()
-                boundCamera = cameraProvider.bindToLifecycle(
-                    lifecycleOwner,
-                    selector,
-                    preview,
-                    capture
-                )
+                if (analysisEnabled) {
+                    val analysis = ImageAnalysis.Builder()
+                        .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                        .setTargetResolution(android.util.Size(320, 240))
+                        .build()
+                    val analysisExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
+                    analysis.setAnalyzer(analysisExecutor) { image ->
+                        try {
+                            val plane = image.planes.firstOrNull()
+                            if (plane != null) {
+                                val buffer = plane.buffer
+                                val data = ByteArray(buffer.remaining())
+                                buffer.get(data)
+                                val bins = FloatArray(32)
+                                var sampled = 0
+                                var clipped = 0
+                                val rowStride = plane.rowStride
+                                val pixelStride = plane.pixelStride
+                                var y = 0
+                                while (y < image.height) {
+                                    var x = 0
+                                    while (x < image.width) {
+                                        val offset = y * rowStride + x * pixelStride
+                                        if (offset < data.size) {
+                                            val value = data[offset].toInt() and 0xFF
+                                            bins[(value * 32 / 256).coerceIn(0, 31)] += 1f
+                                            sampled++
+                                            if (value >= 250) clipped++
+                                        }
+                                        x += 4
+                                    }
+                                    y += 4
+                                }
+                                val peak = (bins.maxOrNull() ?: 1f).coerceAtLeast(1f)
+                                val normalized = bins.map { it / peak }
+                                val clipping = if (sampled > 0) clipped.toFloat() / sampled else 0f
+                                ContextCompat.getMainExecutor(context).execute {
+                                    onHistogram(normalized, clipping)
+                                }
+                            }
+                        } catch (_: Exception) {
+                        } finally {
+                            image.close()
+                        }
+                    }
+                    try {
+                        boundCamera = cameraProvider.bindToLifecycle(
+                            lifecycleOwner, selector, preview, capture, analysis
+                        )
+                    } catch (_: Exception) {
+                        analysis.clearAnalyzer()
+                        analysisExecutor.shutdown()
+                        boundCamera = cameraProvider.bindToLifecycle(
+                            lifecycleOwner, selector, preview, capture
+                        )
+                    }
+                } else {
+                    boundCamera = cameraProvider.bindToLifecycle(
+                        lifecycleOwner, selector, preview, capture
+                    )
+                    onHistogram(List(32) { 0f }, 0f)
+                }
                 onCameraReady(boundCamera, capture)
                 onRawCapabilityChanged(supportsRawJpeg)
             } catch (_: Exception) {
