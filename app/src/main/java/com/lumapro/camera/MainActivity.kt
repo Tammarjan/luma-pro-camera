@@ -624,6 +624,12 @@ private fun LumaCameraScreen() {
                                 liveTint = 0f
                             }
                         }
+                        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            QuickCameraChip("NATURAL", true) { liveBrightness = 0f; liveContrast = 0f; liveSaturation = 0f; liveWarmth = 0f; liveTint = 0f }
+                            QuickCameraChip("VIVID", true) { liveBrightness = 0f; liveContrast = 0.12f; liveSaturation = 0.35f; liveWarmth = 0f; liveTint = 0f }
+                            QuickCameraChip("WARM", true) { liveBrightness = 0f; liveContrast = 0.05f; liveSaturation = 0.08f; liveWarmth = 0.4f; liveTint = 0.03f }
+                            QuickCameraChip("COOL", true) { liveBrightness = 0f; liveContrast = 0.05f; liveSaturation = 0.08f; liveWarmth = -0.4f; liveTint = 0f }
+                        }
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                             Text("EXPOSURE COMPENSATION", color = Color.White, style = MaterialTheme.typography.labelSmall)
                             Text("EV ${if (exposureIndex > 0) "+" else ""}${exposureIndex}", color = Color(0xFFFFD54F), style = MaterialTheme.typography.labelSmall)
