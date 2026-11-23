@@ -194,9 +194,11 @@ private fun LumaCameraScreen() {
     var isRecordingVideo by remember { mutableStateOf(false) }
     var recordingSeconds by remember { mutableIntStateOf(0) }
     var hasAudioPermission by remember { mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) }
+    var audioPermissionAsked by remember { mutableStateOf(hasAudioPermission) }
     val audioPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         hasAudioPermission = granted
-        Toast.makeText(context, if (granted) "Microphone enabled for video" else "Video will be recorded without audio", Toast.LENGTH_SHORT).show()
+        audioPermissionAsked = true
+        Toast.makeText(context, if (granted) "Microphone enabled for video" else "Microphone denied — silent video is available", Toast.LENGTH_SHORT).show()
     }
     var camera by remember { mutableStateOf<Camera?>(null) }
     var isCapturing by remember { mutableStateOf(false) }
@@ -739,7 +741,7 @@ private fun LumaCameraScreen() {
                             CameraSelector.LENS_FACING_BACK
                         }
                     },
-                    enabled = hasPermission
+                    enabled = hasPermission && !isRecordingVideo
                 ) { Text("Flip") }
 
                 Button(
@@ -759,12 +761,12 @@ private fun LumaCameraScreen() {
                                 if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) put(MediaStore.Video.Media.RELATIVE_PATH, "Movies/Luma Pro Camera")
                             }
                             val output = MediaStoreOutputOptions.Builder(context.contentResolver, MediaStore.Video.Media.EXTERNAL_CONTENT_URI).setContentValues(values).build()
-                            if (!hasAudioPermission) {
+                            if (!hasAudioPermission && !audioPermissionAsked) {
                                 audioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
                             } else runCatching {
-                                activeRecording = useCase.output.prepareRecording(context, output)
-                                    .withAudioEnabled()
-                                    .start(ContextCompat.getMainExecutor(context)) { event ->
+                                val pending = useCase.output.prepareRecording(context, output)
+                                val configured = if (hasAudioPermission) pending.withAudioEnabled() else pending
+                                activeRecording = configured.start(ContextCompat.getMainExecutor(context)) { event ->
                                     when (event) {
                                         is VideoRecordEvent.Start -> isRecordingVideo = true
                                         is VideoRecordEvent.Finalize -> {
