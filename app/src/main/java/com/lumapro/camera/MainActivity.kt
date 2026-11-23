@@ -662,6 +662,7 @@ private fun CameraPreview(
                 val preview = Preview.Builder().build().also {
                     it.surfaceProvider = previewView.surfaceProvider
                 }
+                val selector = CameraSelector.Builder().requireLensFacing(lensFacing).build()
                 val supportedFormats = runCatching {
                     ImageCapture.getImageCaptureCapabilities(cameraProvider.getCameraInfo(selector))
                         .supportedOutputFormats
@@ -671,7 +672,6 @@ private fun CameraPreview(
                     .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
                 if (supportsRawJpeg) captureBuilder.setOutputFormat(ImageCapture.OUTPUT_FORMAT_RAW_JPEG)
                 val capture = captureBuilder.build()
-                val selector = CameraSelector.Builder().requireLensFacing(lensFacing).build()
 
                 cameraProvider.unbindAll()
                 boundCamera = cameraProvider.bindToLifecycle(
