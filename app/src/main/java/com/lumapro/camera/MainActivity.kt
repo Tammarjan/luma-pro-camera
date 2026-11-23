@@ -142,6 +142,7 @@ private fun LumaCameraScreen() {
     var showGallery by remember { mutableStateOf(false) }
     var editingPhoto by remember { mutableStateOf<GalleryPhoto?>(null) }
     var showProSettings by remember { mutableStateOf(false) }
+    var cameraPanelTab by remember { mutableIntStateOf(0) }
     var galleryPhotos by remember { mutableStateOf<List<GalleryPhoto>>(emptyList()) }
     var selectedPhoto by remember { mutableStateOf<GalleryPhoto?>(null) }
     var selectedPhotoUris by remember { mutableStateOf<Set<String>>(emptySet()) }
@@ -438,367 +439,232 @@ private fun LumaCameraScreen() {
             }
         }
 
-        Column(
+        // Compact professional top bar
+        Row(
             modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth()
-                .background(Color(0x990A0A0A)).padding(horizontal = 18.dp, vertical = 14.dp)
+                .background(Color(0xB8000000)).padding(horizontal = 16.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column {
-                    Text("LUMA PRO", color = Color.White, style = MaterialTheme.typography.titleLarge)
-                    Text("PRO CAMERA", color = Color(0xFFB9B9B9), style = MaterialTheme.typography.labelSmall)
-                }
-                Button(
-                    onClick = { showGallery = true },
-                    shape = RoundedCornerShape(18.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF303030))
-                ) { Text("Gallery  ▣") }
+            Column {
+                Text("LUMA", color = Color.White, style = MaterialTheme.typography.titleMedium)
+                Text("PRO CAMERA", color = Color(0xFFBDBDBD), style = MaterialTheme.typography.labelSmall)
             }
-            Spacer(Modifier.height(8.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Surface(color = Color(0xFF292929), shape = RoundedCornerShape(20.dp)) {
-                    Text(
-                        if (lensFacing == CameraSelector.LENS_FACING_BACK) "REAR" else "FRONT",
-                        color = Color.White, modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                        style = MaterialTheme.typography.labelSmall
-                    )
-                }
-                Surface(color = Color(0xFF292929), shape = RoundedCornerShape(20.dp)) {
-                    Text(
-                        if (rawCaptureEnabled && rawJpegSupported) "RAW + JPEG" else "JPEG",
-                        color = Color.White, modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                        style = MaterialTheme.typography.labelSmall
-                    )
-                }
-                Surface(color = Color(0xFF292929), shape = RoundedCornerShape(20.dp)) {
-                    Text(if (aspectRatioWide) "16:9" else "4:3", color = Color.White,
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Surface(color = Color(0x66333333), shape = RoundedCornerShape(18.dp)) {
+                    Text(if (rawCaptureEnabled && rawJpegSupported) "RAW" else if (videoMode) "VIDEO" else "JPEG",
+                        color = Color.White, modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
                         style = MaterialTheme.typography.labelSmall)
                 }
+                Surface(
+                    modifier = Modifier.clickable { showGallery = true },
+                    color = Color(0x88333333), shape = RoundedCornerShape(18.dp)
+                ) { Text("GALLERY", color = Color.White, modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp), style = MaterialTheme.typography.labelSmall) }
+                Surface(
+                    modifier = Modifier.clickable { showProSettings = !showProSettings },
+                    color = Color(0x88333333), shape = CircleShape
+                ) { Text("⋮", color = Color.White, modifier = Modifier.padding(horizontal = 13.dp, vertical = 6.dp), style = MaterialTheme.typography.titleMedium) }
             }
         }
 
+        // Small quick-access strip, kept away from the viewfinder center
+        Row(
+            modifier = Modifier.align(Alignment.TopCenter).padding(top = 66.dp)
+                .background(Color(0x66000000), RoundedCornerShape(22.dp)).padding(horizontal = 8.dp, vertical = 5.dp),
+            horizontalArrangement = Arrangement.spacedBy(7.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            QuickCameraChip(if (flashEnabled) "FLASH ON" else "FLASH", flashAvailable) {
+                flashEnabled = !flashEnabled
+                imageCapture?.flashMode = if (flashEnabled) ImageCapture.FLASH_MODE_ON else ImageCapture.FLASH_MODE_OFF
+            }
+            QuickCameraChip(if (aspectRatioWide) "16:9" else "4:3", !isCapturing) { if (!isCapturing) aspectRatioWide = !aspectRatioWide }
+            QuickCameraChip(if (captureTimerSeconds == 0) "TIMER" else "${captureTimerSeconds}s", !isCapturing) {
+                captureTimerSeconds = when (captureTimerSeconds) { 0 -> 3; 3 -> 5; 5 -> 10; else -> 0 }
+            }
+        }
+
+        // Professional bottom control deck: shooting controls stay visible, adjustments are tabbed
         Column(
             modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth()
-                .background(Color(0xCC101010)).padding(horizontal = 22.dp, vertical = 16.dp),
+                .background(Color(0xE6101010), RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
+                .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 12.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("CAMERA CONTROLS", color = Color.White, style = MaterialTheme.typography.titleSmall)
-                Button(onClick = { showProSettings = !showProSettings }) {
-                    Text(if (showProSettings) "Hide Pro Settings" else "Pro Settings")
-                }
-            }
-            if (showProSettings) {
-                Column(
-                    modifier = Modifier.fillMaxWidth().heightIn(max = 260.dp)
-                        .verticalScroll(rememberScrollState())
-                ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("EXPOSURE", color = Color.White, style = MaterialTheme.typography.labelMedium)
-                    Text(
-                        "EV ${if (exposureIndex > 0) "+" else ""}$exposureIndex",
-                        color = Color.White,
-                        style = MaterialTheme.typography.labelMedium
-                    )
-                }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("JPEG QUALITY", color = Color.White, style = MaterialTheme.typography.labelMedium)
-                    Text("$jpegQuality%", color = Color.White, style = MaterialTheme.typography.labelMedium)
-                }
-                Slider(
-                    value = jpegQuality.toFloat(),
-                    onValueChange = { jpegQuality = it.roundToInt().coerceIn(70, 100) },
-                    valueRange = 70f..100f,
-                    steps = 29,
-                    enabled = !isCapturing
-                )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("ASPECT RATIO", color = Color.White, style = MaterialTheme.typography.labelMedium)
-                    Button(onClick = { aspectRatioWide = !aspectRatioWide }, enabled = !isCapturing) {
-                        Text(if (aspectRatioWide) "16:9" else "4:3")
-                    }
-                }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("CAPTURE PRIORITY", color = Color.White, style = MaterialTheme.typography.labelMedium)
-                    Button(onClick = { maximizeQuality = !maximizeQuality }, enabled = !isCapturing) {
-                        Text(if (maximizeQuality) "Quality" else "Speed")
-                    }
-                }
-                if (exposureMax > exposureMin) {
-                    Slider(
-                        value = exposureIndex.toFloat().coerceIn(exposureMin.toFloat(), exposureMax.toFloat()),
-                        onValueChange = { value ->
-                            val next = value.roundToInt().coerceIn(exposureMin, exposureMax)
-                            exposureIndex = next
-                            camera?.cameraControl?.setExposureCompensationIndex(next)
-                        },
-                        valueRange = exposureMin.toFloat()..exposureMax.toFloat(),
-                        steps = (exposureMax - exposureMin - 1).coerceAtLeast(0),
-                        enabled = camera != null && !manualExposureEnabled
-                    )
-                } else {
-                    Text("Exposure adjustment unavailable on this camera", color = Color.LightGray)
-                }
-                if (manualSensorSupported) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("MANUAL ISO / SHUTTER", color = Color.White, style = MaterialTheme.typography.labelMedium)
-                        Button(onClick = {
-                            manualExposureEnabled = !manualExposureEnabled
-                            setManualExposure(camera, manualExposureEnabled, isoValue, shutterValueNs)
-                        }) { Text(if (manualExposureEnabled) "MANUAL ON" else "AUTO") }
-                    }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("ISO $isoValue", color = Color.White, modifier = Modifier.weight(1f))
-                        Slider(
-                            modifier = Modifier.weight(2f),
-                            value = isoValue.toFloat(),
-                            onValueChange = {
-                                isoValue = it.roundToInt().coerceIn(isoMin, isoMax)
-                                if (manualExposureEnabled) setManualExposure(camera, true, isoValue, shutterValueNs)
-                            },
-                            valueRange = isoMin.toFloat()..isoMax.toFloat(),
-                            enabled = manualExposureEnabled && isoMax > isoMin
-                        )
-                    }
-                    val shutterFraction = shutterToFraction(shutterValueNs, shutterMinNs, shutterMaxNs)
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Shutter 1/${(1_000_000_000.0 / shutterValueNs).roundToInt()}s", color = Color.White, modifier = Modifier.weight(1f))
-                        Slider(
-                            modifier = Modifier.weight(2f),
-                            value = shutterFraction,
-                            onValueChange = {
-                                shutterValueNs = fractionToShutter(it, shutterMinNs, shutterMaxNs)
-                                if (manualExposureEnabled) setManualExposure(camera, true, isoValue, shutterValueNs)
-                            },
-                            valueRange = 0f..1f,
-                            enabled = manualExposureEnabled && shutterMaxNs > shutterMinNs
-                        )
-                    }
-                } else {
-                    Text("Manual ISO / shutter not supported by this camera", color = Color.LightGray, style = MaterialTheme.typography.labelSmall)
-                }
-                if (manualFocusSupported) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            if (manualFocusEnabled) "MANUAL FOCUS" else "FOCUS AUTO",
-                            color = Color.White,
-                            style = MaterialTheme.typography.labelMedium
-                        )
-                        Button(onClick = {
-                            manualFocusEnabled = !manualFocusEnabled
-                            if (manualFocusEnabled) {
-                                setManualFocus(camera, focusDistance)
-                            } else {
-                                setAutoFocus(camera)
-                                focusDistance = 0f
-                            }
-                        }) { Text(if (manualFocusEnabled) "AUTO FOCUS" else "MANUAL") }
-                    }
-                    Slider(
-                        value = focusDistance.coerceIn(0f, focusDistanceMax),
-                        onValueChange = {
-                            focusDistance = it
-                            if (manualFocusEnabled) setManualFocus(camera, it)
-                        },
-                        valueRange = 0f..focusDistanceMax,
-                        enabled = manualFocusEnabled && focusDistanceMax > 0f
-                    )
-                } else {
-                    Text("Manual focus unavailable on this camera", color = Color.LightGray, style = MaterialTheme.typography.labelSmall)
-                }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("WHITE BALANCE", color = Color.White, style = MaterialTheme.typography.labelMedium)
-                    Button(onClick = {
-                        val modes = supportedWbModes
-                        val current = modes.indexOf(selectedWbMode).coerceAtLeast(0)
-                        selectedWbMode = modes[(current + 1) % modes.size]
-                        setWhiteBalance(camera, selectedWbMode)
-                    }, enabled = camera != null) {
-                        Text(whiteBalanceName(selectedWbMode))
-                    }
-                }
-    
-                }
-
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Text(if (videoMode) "VIDEO" else "PHOTO", color = Color.White, style = MaterialTheme.typography.labelLarge)
+                Text(if (isRecordingVideo) "● REC  ${recordingSeconds}s" else if (manualExposureEnabled) "M • ISO ${isoValue}" else "AUTO EXPOSURE",
+                    color = if (isRecordingVideo) Color.Red else Color(0xFFBDBDBD), style = MaterialTheme.typography.labelSmall)
+                Text(if (aspectRatioWide) "16:9" else "4:3", color = Color.White, style = MaterialTheme.typography.labelMedium)
             }
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Button(
-                    onClick = {
-                        flashEnabled = !flashEnabled
-                        imageCapture?.flashMode = if (flashEnabled) {
-                            ImageCapture.FLASH_MODE_ON
-                        } else {
-                            ImageCapture.FLASH_MODE_OFF
-                        }
-                    },
-                    enabled = flashAvailable && imageCapture != null
-                ) {
-                    Text(if (!flashAvailable) "Flash N/A" else if (flashEnabled) "Flash ON" else "Flash OFF")
-                }
-                Button(onClick = { gridEnabled = !gridEnabled }) {
-                    Text(if (gridEnabled) "Grid ON" else "Grid OFF")
-                }
-                Button(onClick = { zebraEnabled = !zebraEnabled }) { Text(if (zebraEnabled) "Zebra ON" else "Zebra") }
-                Button(onClick = { peakingEnabled = !peakingEnabled }) { Text(if (peakingEnabled) "Peaking ON" else "Peaking") }
-                Button(onClick = { histogramEnabled = !histogramEnabled }) {
-                    Text(if (histogramEnabled) "Histogram ON" else "Histogram")
-                }
-                Button(onClick = { levelEnabled = !levelEnabled }) {
-                    Text(if (levelEnabled) "Level ON" else "Level OFF")
-                }
-                Button(
-                    onClick = {
-                        focusLockEnabled = !focusLockEnabled
-                        setFocusLock(camera, focusLockEnabled)
-                    },
-                    enabled = camera != null
-                ) {
-                    Text(if (focusLockEnabled) "AE/AF LOCK" else "AE/AF AUTO")
-                }
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(bottom = 2.dp),
-                horizontalArrangement = Arrangement.SpaceEvenly,
+                modifier = Modifier.fillMaxWidth().padding(top = 5.dp, bottom = 2.dp),
+                horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 listOf(0.5f, 1f, 2f).filter { it >= minZoomRatio && it <= maxZoomRatio }.forEach { preset ->
-                    Button(
-                        onClick = {
-                            camera?.cameraControl?.setZoomRatio(preset)
-                            zoomRatio = preset
+                    Surface(
+                        modifier = Modifier.padding(horizontal = 5.dp).clickable(enabled = camera != null) {
+                            camera?.cameraControl?.setZoomRatio(preset); zoomRatio = preset
                         },
-                        enabled = camera != null
-                    ) { Text(if (preset == 0.5f) "0.5×" else if (preset == 1f) "1×" else "2×") }
+                        color = if (kotlin.math.abs(zoomRatio - preset) < 0.08f) Color(0xFFFFD54F) else Color(0x55333333),
+                        shape = CircleShape
+                    ) {
+                        Text(if (preset == 0.5f) "0.5×" else "${preset.toInt()}×",
+                            color = if (kotlin.math.abs(zoomRatio - preset) < 0.08f) Color.Black else Color.White,
+                            modifier = Modifier.padding(horizontal = 13.dp, vertical = 7.dp), style = MaterialTheme.typography.labelMedium)
+                    }
                 }
-                Text("Zoom " + zoomRatio + "×", color = Color.LightGray)
+                Text("  ${"%.1f".format(zoomRatio)}×", color = Color.LightGray, style = MaterialTheme.typography.labelSmall)
             }
             if (maxZoomRatio > minZoomRatio) {
-                Slider(
-                    value = zoomRatio.coerceIn(minZoomRatio, maxZoomRatio),
-                    onValueChange = { next ->
-                        zoomRatio = next
-                        camera?.cameraControl?.setZoomRatio(next)
-                    },
-                    valueRange = minZoomRatio..maxZoomRatio,
-                    enabled = camera != null
-                )
-            }
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-                Button(onClick = { if (!isRecordingVideo) videoMode = false }, enabled = !isRecordingVideo) { Text(if (videoMode) "PHOTO" else "PHOTO MODE") }
-                Spacer(Modifier.size(10.dp))
-                Button(onClick = { if (!isRecordingVideo) videoMode = true }, enabled = !isRecordingVideo) { Text(if (videoMode) "VIDEO MODE" else "VIDEO") }
-                if (videoMode) Text("  •  4K when supported", color = Color.LightGray, style = MaterialTheme.typography.labelSmall)
+                Slider(value = zoomRatio.coerceIn(minZoomRatio, maxZoomRatio), onValueChange = {
+                    zoomRatio = it; camera?.cameraControl?.setZoomRatio(it)
+                }, valueRange = minZoomRatio..maxZoomRatio, enabled = camera != null,
+                    modifier = Modifier.height(28.dp))
             }
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp),
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Button(
-                    onClick = {
-                        lensFacing = if (lensFacing == CameraSelector.LENS_FACING_BACK) {
-                            CameraSelector.LENS_FACING_FRONT
-                        } else {
-                            CameraSelector.LENS_FACING_BACK
+                Surface(modifier = Modifier.clickable { lensFacing = if (lensFacing == CameraSelector.LENS_FACING_BACK) CameraSelector.LENS_FACING_FRONT else CameraSelector.LENS_FACING_BACK },
+                    color = Color(0x55333333), shape = CircleShape) {
+                    Text("↻", color = Color.White, modifier = Modifier.padding(12.dp), style = MaterialTheme.typography.titleLarge)
+                }
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Surface(modifier = Modifier.clickable(enabled = !isRecordingVideo) { videoMode = false },
+                            color = if (!videoMode) Color.White else Color.Transparent, shape = RoundedCornerShape(14.dp)) {
+                            Text("PHOTO", color = if (!videoMode) Color.Black else Color.LightGray, modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp), style = MaterialTheme.typography.labelMedium)
                         }
-                    },
-                    enabled = hasPermission && !isRecordingVideo
-                ) { Text("Flip") }
-
-                Button(
-                    modifier = Modifier.size(84.dp),
-                    enabled = if (videoMode) videoCapture != null else imageCapture != null && !isCapturing && !isRecordingVideo,
-                    shape = CircleShape,
-                    colors = ButtonDefaults.buttonColors(containerColor = if (isRecordingVideo) Color.Red else Color.White, contentColor = if (isRecordingVideo) Color.White else Color.Black, disabledContainerColor = Color.Gray),
-                    onClick = {
-                        if (!videoMode) performCapture()
-                        else if (isRecordingVideo) { activeRecording?.stop(); activeRecording = null }
-                        else {
-                            val useCase = videoCapture ?: return@Button
-                            val name = "Luma_Video_" + SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date()) + ".mp4"
-                            val values = ContentValues().apply {
-                                put(MediaStore.Video.Media.DISPLAY_NAME, name)
-                                put(MediaStore.Video.Media.MIME_TYPE, "video/mp4")
-                                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) put(MediaStore.Video.Media.RELATIVE_PATH, "Movies/Luma Pro Camera")
-                            }
-                            val output = MediaStoreOutputOptions.Builder(context.contentResolver, MediaStore.Video.Media.EXTERNAL_CONTENT_URI).setContentValues(values).build()
-                            if (!hasAudioPermission && !audioPermissionAsked) {
-                                audioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                            } else runCatching {
-                                val pending = useCase.output.prepareRecording(context, output)
-                                val configured = if (hasAudioPermission) pending.withAudioEnabled() else pending
-                                activeRecording = configured.start(ContextCompat.getMainExecutor(context)) { event ->
-                                    when (event) {
-                                        is VideoRecordEvent.Start -> isRecordingVideo = true
-                                        is VideoRecordEvent.Finalize -> {
-                                            isRecordingVideo = false
-                                            activeRecording = null
-                                            Toast.makeText(context, if (!event.hasError()) "Video saved to Movies/Luma Pro Camera" else "Video recording failed", Toast.LENGTH_SHORT).show()
+                        Surface(modifier = Modifier.clickable(enabled = !isRecordingVideo) { videoMode = true },
+                            color = if (videoMode) Color.White else Color.Transparent, shape = RoundedCornerShape(14.dp)) {
+                            Text("VIDEO", color = if (videoMode) Color.Black else Color.LightGray, modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp), style = MaterialTheme.typography.labelMedium)
+                        }
+                    }
+                    Spacer(Modifier.height(5.dp))
+                    Button(
+                        modifier = Modifier.size(76.dp),
+                        enabled = if (videoMode) videoCapture != null else imageCapture != null && !isCapturing && !isRecordingVideo,
+                        shape = CircleShape,
+                        colors = ButtonDefaults.buttonColors(containerColor = if (isRecordingVideo) Color(0xFFE53935) else Color.White, contentColor = Color.Black, disabledContainerColor = Color.Gray),
+                        onClick = {
+                            if (!videoMode) performCapture()
+                            else if (isRecordingVideo) { activeRecording?.stop(); activeRecording = null }
+                            else {
+                                val useCase = videoCapture ?: return@Button
+                                val name = "Luma_Video_" + SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date()) + ".mp4"
+                                val values = ContentValues().apply {
+                                    put(MediaStore.Video.Media.DISPLAY_NAME, name)
+                                    put(MediaStore.Video.Media.MIME_TYPE, "video/mp4")
+                                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) put(MediaStore.Video.Media.RELATIVE_PATH, "Movies/Luma Pro Camera")
+                                }
+                                val output = MediaStoreOutputOptions.Builder(context.contentResolver, MediaStore.Video.Media.EXTERNAL_CONTENT_URI).setContentValues(values).build()
+                                if (!hasAudioPermission && !audioPermissionAsked) audioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                                else runCatching {
+                                    val pending = useCase.output.prepareRecording(context, output)
+                                    val configured = if (hasAudioPermission) pending.withAudioEnabled() else pending
+                                    activeRecording = configured.start(ContextCompat.getMainExecutor(context)) { event ->
+                                        when (event) {
+                                            is VideoRecordEvent.Start -> isRecordingVideo = true
+                                            is VideoRecordEvent.Finalize -> {
+                                                isRecordingVideo = false; activeRecording = null
+                                                Toast.makeText(context, if (!event.hasError()) "Video saved to Movies/Luma Pro Camera" else "Video recording failed", Toast.LENGTH_SHORT).show()
+                                            }
                                         }
                                     }
-                                }
-                            }.onFailure { isRecordingVideo = false; Toast.makeText(context, "Unable to start video", Toast.LENGTH_SHORT).show() }
+                                }.onFailure { isRecordingVideo = false; Toast.makeText(context, "Unable to start video", Toast.LENGTH_SHORT).show() }
+                            }
+                        }
+                    ) { Text(if (videoMode) if (isRecordingVideo) "■" else "●" else if (timerCountdown > 0) timerCountdown.toString() else if (isCapturing) "…" else "●", style = MaterialTheme.typography.headlineMedium) }
+                }
+                Surface(modifier = Modifier.clickable { showGallery = true }, color = Color(0x55333333), shape = CircleShape) {
+                    Text("▣", color = Color.White, modifier = Modifier.padding(13.dp), style = MaterialTheme.typography.titleLarge)
+                }
+            }
+
+            Row(Modifier.fillMaxWidth().padding(top = 5.dp, bottom = 5.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                listOf("ADJUST", "PRO", "TOOLS").forEachIndexed { index, label ->
+                    val selected = cameraPanelTab == index
+                    Surface(modifier = Modifier.weight(1f).clickable { cameraPanelTab = index },
+                        color = if (selected) Color(0xFFFFD54F) else Color(0x55333333), shape = RoundedCornerShape(12.dp)) {
+                        Text(label, color = if (selected) Color.Black else Color.White, modifier = Modifier.padding(vertical = 9.dp),
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center, style = MaterialTheme.typography.labelMedium)
+                    }
+                }
+            }
+
+            Column(Modifier.fillMaxWidth().heightIn(max = 172.dp).verticalScroll(rememberScrollState())) {
+                when (cameraPanelTab) {
+                    0 -> {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("EXPOSURE COMPENSATION", color = Color.White, style = MaterialTheme.typography.labelSmall)
+                            Text("EV ${if (exposureIndex > 0) "+" else ""}${exposureIndex}", color = Color(0xFFFFD54F), style = MaterialTheme.typography.labelSmall)
+                        }
+                        if (exposureMax > exposureMin) Slider(
+                            value = exposureIndex.toFloat().coerceIn(exposureMin.toFloat(), exposureMax.toFloat()),
+                            onValueChange = { val v = it.roundToInt().coerceIn(exposureMin, exposureMax); exposureIndex = v; camera?.cameraControl?.setExposureCompensationIndex(v) },
+                            valueRange = exposureMin.toFloat()..exposureMax.toFloat(),
+                            steps = (exposureMax - exposureMin - 1).coerceAtLeast(0), enabled = camera != null && !manualExposureEnabled
+                        ) else Text("Exposure adjustment unavailable", color = Color.LightGray)
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("Capture timer", color = Color.White, style = MaterialTheme.typography.labelSmall)
+                            Text(if (captureTimerSeconds == 0) "Off" else "${captureTimerSeconds}s", color = Color.LightGray, style = MaterialTheme.typography.labelSmall)
                         }
                     }
-                ) { Text(if (videoMode) if (isRecordingVideo) "■" else "●" else if (timerCountdown > 0) timerCountdown.toString() else if (isCapturing) "…" else "●") }
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Button(
-                        onClick = {
-                            captureTimerSeconds = when (captureTimerSeconds) {
-                                0 -> 3
-                                3 -> 5
-                                5 -> 10
-                                else -> 0
+                    1 -> {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Text("MANUAL EXPOSURE", color = Color.White, style = MaterialTheme.typography.labelSmall)
+                            QuickCameraChip(if (manualExposureEnabled) "MANUAL" else "AUTO", manualSensorSupported) {
+                                if (manualSensorSupported) { manualExposureEnabled = !manualExposureEnabled; setManualExposure(camera, manualExposureEnabled, isoValue, shutterValueNs) }
                             }
-                        },
-                        enabled = !isCapturing
-                    ) {
-                        Text(if (captureTimerSeconds == 0) "Timer OFF" else "Timer " + captureTimerSeconds + "s")
+                        }
+                        if (manualSensorSupported) {
+                            Text("ISO  ${isoValue}", color = Color.White, style = MaterialTheme.typography.labelSmall)
+                            Slider(value = isoValue.toFloat(), onValueChange = { isoValue = it.roundToInt().coerceIn(isoMin, isoMax); if (manualExposureEnabled) setManualExposure(camera, true, isoValue, shutterValueNs) },
+                                valueRange = isoMin.toFloat()..isoMax.toFloat(), enabled = manualExposureEnabled && isoMax > isoMin)
+                            Text("SHUTTER  1/${(1_000_000_000.0 / shutterValueNs).roundToInt()}s", color = Color.White, style = MaterialTheme.typography.labelSmall)
+                            Slider(value = shutterToFraction(shutterValueNs, shutterMinNs, shutterMaxNs), onValueChange = { shutterValueNs = fractionToShutter(it, shutterMinNs, shutterMaxNs); if (manualExposureEnabled) setManualExposure(camera, true, isoValue, shutterValueNs) },
+                                valueRange = 0f..1f, enabled = manualExposureEnabled && shutterMaxNs > shutterMinNs)
+                        } else Text("Manual ISO / shutter unsupported", color = Color.LightGray, style = MaterialTheme.typography.labelSmall)
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Text("FOCUS", color = Color.White, style = MaterialTheme.typography.labelSmall)
+                            QuickCameraChip(if (manualFocusEnabled) "MANUAL" else "AUTO", manualFocusSupported) {
+                                if (manualFocusSupported) { manualFocusEnabled = !manualFocusEnabled; if (manualFocusEnabled) setManualFocus(camera, focusDistance) else { setAutoFocus(camera); focusDistance = 0f } }
+                            }
+                        }
+                        if (manualFocusSupported) Slider(value = focusDistance.coerceIn(0f, focusDistanceMax), onValueChange = { focusDistance = it; if (manualFocusEnabled) setManualFocus(camera, it) },
+                            valueRange = 0f..focusDistanceMax, enabled = manualFocusEnabled && focusDistanceMax > 0f)
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Text("WHITE BALANCE", color = Color.White, style = MaterialTheme.typography.labelSmall)
+                            QuickCameraChip(whiteBalanceName(selectedWbMode), camera != null) {
+                                val modes = supportedWbModes; if (modes.isNotEmpty()) { val current = modes.indexOf(selectedWbMode).coerceAtLeast(0); selectedWbMode = modes[(current + 1) % modes.size]; setWhiteBalance(camera, selectedWbMode) }
+                            }
+                        }
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Text("JPEG QUALITY  ${jpegQuality}%", color = Color.White, style = MaterialTheme.typography.labelSmall)
+                            QuickCameraChip(if (maximizeQuality) "QUALITY" else "SPEED", true) { maximizeQuality = !maximizeQuality }
+                        }
+                        Slider(value = jpegQuality.toFloat(), onValueChange = { jpegQuality = it.roundToInt().coerceIn(70, 100) }, valueRange = 70f..100f, steps = 29, enabled = !isCapturing)
+                        if (rawJpegSupported) QuickCameraChip(if (rawCaptureEnabled) "RAW + JPEG ON" else "RAW + JPEG OFF", true) { rawCaptureEnabled = !rawCaptureEnabled }
                     }
-                    Text(if (rawCaptureEnabled && rawJpegSupported) "RAW + JPEG" else "JPEG", color = Color.White)
-                    if (rawJpegSupported) {
-                        Button(onClick = { rawCaptureEnabled = !rawCaptureEnabled }) {
-                            Text(if (rawCaptureEnabled) "RAW ON" else "RAW OFF")
+                    else -> {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            QuickCameraChip(if (gridEnabled) "GRID ON" else "GRID", true) { gridEnabled = !gridEnabled }
+                            QuickCameraChip(if (histogramEnabled) "HISTOGRAM ON" else "HISTOGRAM", true) { histogramEnabled = !histogramEnabled }
+                        }
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            QuickCameraChip(if (zebraEnabled) "ZEBRA ON" else "ZEBRA", true) { zebraEnabled = !zebraEnabled }
+                            QuickCameraChip(if (peakingEnabled) "PEAKING ON" else "PEAKING", true) { peakingEnabled = !peakingEnabled }
+                        }
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            QuickCameraChip(if (levelEnabled) "LEVEL ON" else "LEVEL", true) { levelEnabled = !levelEnabled }
+                            QuickCameraChip(if (focusLockEnabled) "AE/AF LOCK" else "AE/AF AUTO", camera != null) { focusLockEnabled = !focusLockEnabled; setFocusLock(camera, focusLockEnabled) }
+                        }
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            QuickCameraChip(if (aspectRatioWide) "16:9" else "4:3", !isCapturing) { if (!isCapturing) aspectRatioWide = !aspectRatioWide }
+                            QuickCameraChip("FLIP CAMERA", !isRecordingVideo) { if (!isRecordingVideo) lensFacing = if (lensFacing == CameraSelector.LENS_FACING_BACK) CameraSelector.LENS_FACING_FRONT else CameraSelector.LENS_FACING_BACK }
                         }
                     }
                 }
@@ -927,6 +793,20 @@ private fun LumaCameraScreen() {
     }
 }
 
+
+
+@Composable
+private fun QuickCameraChip(label: String, enabled: Boolean = true, onClick: () -> Unit) {
+    Surface(
+        modifier = Modifier.clickable(enabled = enabled, onClick = onClick),
+        color = if (enabled) Color(0x66383838) else Color(0x33222222),
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Text(label, color = if (enabled) Color.White else Color(0xFF777777),
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+            style = MaterialTheme.typography.labelSmall)
+    }
+}
 
 @Composable
 private fun AnalysisPointOverlay(points: List<Offset>, color: Color, modifier: Modifier = Modifier) {
