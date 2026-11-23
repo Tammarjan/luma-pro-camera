@@ -1,0 +1,148 @@
+package com.lumapro.camera
+
+import android.content.ContentValues
+import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.net.Uri
+import android.os.Build
+import android.provider.MediaStore
+import android.widget.Toast
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import kotlin.math.pow
+import kotlin.math.roundToInt
+
+@Composable
+internal fun PhotoEditorDialog(photoUri: Uri, onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    var source by remember(photoUri) { mutableStateOf<Bitmap?>(null) }
+    var edited by remember(photoUri) { mutableStateOf<Bitmap?>(null) }
+    var exposure by remember(photoUri) { mutableFloatStateOf(0f) }
+    var contrast by remember(photoUri) { mutableFloatStateOf(1f) }
+    var saturation by remember(photoUri) { mutableFloatStateOf(1f) }
+    var warmth by remember(photoUri) { mutableFloatStateOf(0f) }
+    var processing by remember { mutableStateOf(false) }
+    var saving by remember { mutableStateOf(false) }
+
+    LaunchedEffect(photoUri) {
+        source = withContext(Dispatchers.IO) {
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            context.contentResolver.openInputStream(photoUri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
+            var sample = 1
+            while (bounds.outWidth / sample > 3000 || bounds.outHeight / sample > 3000) sample *= 2
+            val options = BitmapFactory.Options().apply { inSampleSize = sample.coerceAtLeast(1); inPreferredConfig = Bitmap.Config.ARGB_8888 }
+            context.contentResolver.openInputStream(photoUri)?.use { BitmapFactory.decodeStream(it, null, options) }
+        }
+        edited = source
+    }
+
+    LaunchedEffect(source, exposure, contrast, saturation, warmth) {
+        val original = source ?: return@LaunchedEffect
+        delay(100)
+        processing = true
+        val result = withContext(Dispatchers.Default) {
+            val output = Bitmap.createBitmap(original.width, original.height, Bitmap.Config.ARGB_8888)
+            val pixels = IntArray(original.width * original.height)
+            original.getPixels(pixels, 0, original.width, 0, 0, original.width, original.height)
+            val gain = 2.0.pow(exposure.toDouble()).toFloat()
+            for (i in pixels.indices) {
+                val color = pixels[i]
+                val a = (color ushr 24) and 0xFF
+                var r = ((color shr 16) and 0xFF).toFloat() * gain
+                var g = ((color shr 8) and 0xFF).toFloat() * gain
+                var b = (color and 0xFF).toFloat() * gain
+                r = (r - 128f) * contrast + 128f + warmth * 24f
+                g = (g - 128f) * contrast + 128f
+                b = (b - 128f) * contrast + 128f - warmth * 24f
+                val luma = 0.2126f * r + 0.7152f * g + 0.0722f * b
+                r = luma + (r - luma) * saturation
+                g = luma + (g - luma) * saturation
+                b = luma + (b - luma) * saturation
+                pixels[i] = (a shl 24) or (r.roundToInt().coerceIn(0, 255) shl 16) or
+                    (g.roundToInt().coerceIn(0, 255) shl 8) or b.roundToInt().coerceIn(0, 255)
+            }
+            output.setPixels(pixels, 0, original.width, 0, 0, original.width, original.height)
+            output
+        }
+        edited = result
+        processing = false
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Color(0xFF171717),
+        title = { Text("Photo Editor", color = Color.White) },
+        text = {
+            Column(Modifier.fillMaxWidth().heightIn(max = 570.dp).verticalScroll(rememberScrollState())) {
+                val preview = edited
+                if (preview != null) Image(preview.asImageBitmap(), "Edited photo preview", Modifier.fillMaxWidth().heightIn(max = 300.dp), contentScale = androidx.compose.ui.layout.ContentScale.Fit)
+                else Box(Modifier.fillMaxWidth().height(180.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+                if (processing) Text("Processing…", color = Color.LightGray)
+                EditorSlider("Exposure", exposure, -2f..2f, { exposure = it }, "%.1f EV".format(exposure))
+                EditorSlider("Contrast", contrast, 0f..2f, { contrast = it }, (contrast * 100).roundToInt().toString() + "%")
+                EditorSlider("Saturation", saturation, 0f..2f, { saturation = it }, (saturation * 100).roundToInt().toString() + "%")
+                EditorSlider("Warmth", warmth, -1f..1f, { warmth = it }, if (warmth >= 0) "Warm +" + (warmth * 100).roundToInt() else "Cool " + (warmth * 100).roundToInt())
+                Text("Original photo remains unchanged. Edited copy is saved separately.", color = Color.LightGray, style = MaterialTheme.typography.bodySmall)
+            }
+        },
+        confirmButton = {
+            Button(enabled = edited != null && !processing && !saving, onClick = {
+                val bitmap = edited ?: return@Button
+                saving = true
+                saveEditedPhoto(context, bitmap) { success ->
+                    saving = false
+                    Toast.makeText(context, if (success) "Edited photo saved" else "Could not save edited photo", Toast.LENGTH_SHORT).show()
+                    if (success) onDismiss()
+                }
+            }) { Text(if (saving) "Saving…" else "Save Copy") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Close", color = Color.White) } }
+    )
+}
+
+@Composable
+private fun EditorSlider(label: String, value: Float, range: ClosedFloatingPointRange<Float>, onChange: (Float) -> Unit, valueLabel: String) {
+    Column(Modifier.fillMaxWidth()) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(label, color = Color.White)
+            Text(valueLabel, color = Color.LightGray)
+        }
+        Slider(value = value, onValueChange = onChange, valueRange = range)
+    }
+}
+
+private fun saveEditedPhoto(context: Context, bitmap: Bitmap, onComplete: (Boolean) -> Unit) {
+    Thread {
+        val name = "Luma_Edit_" + SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date()) + ".jpg"
+        val values = ContentValues().apply {
+            put(MediaStore.Images.Media.DISPLAY_NAME, name)
+            put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/Luma Pro Camera")
+        }
+        val success = runCatching {
+            val uri = context.contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values) ?: error("No output URI")
+            context.contentResolver.openOutputStream(uri)?.use { stream ->
+                if (!bitmap.compress(Bitmap.CompressFormat.JPEG, 95, stream)) error("JPEG encode failed")
+            } ?: error("No output stream")
+            true
+        }.getOrDefault(false)
+        android.os.Handler(android.os.Looper.getMainLooper()).post { onComplete(success) }
+    }.start()
+}
