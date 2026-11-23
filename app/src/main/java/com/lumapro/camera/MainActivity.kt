@@ -10,7 +10,10 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
+import androidx.camera.core.ExposureState
+import androidx.camera.core.FocusMeteringAction
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.Preview
@@ -31,12 +34,13 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -51,6 +55,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.concurrent.Executor
+import kotlin.math.roundToInt
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -75,7 +80,13 @@ private fun LumaCameraScreen() {
         )
     }
     var imageCapture by remember { mutableStateOf<ImageCapture?>(null) }
+    var camera by remember { mutableStateOf<Camera?>(null) }
     var isCapturing by remember { mutableStateOf(false) }
+    var lensFacing by remember { mutableIntStateOf(CameraSelector.LENS_FACING_BACK) }
+    var exposureMin by remember { mutableIntStateOf(0) }
+    var exposureMax by remember { mutableIntStateOf(0) }
+    var exposureIndex by remember { mutableIntStateOf(0) }
+    var zoomRatio by remember { mutableStateOf(1f) }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -85,7 +96,18 @@ private fun LumaCameraScreen() {
         if (hasPermission) {
             CameraPreview(
                 modifier = Modifier.fillMaxSize(),
-                onImageCaptureReady = { imageCapture = it }
+                lensFacing = lensFacing,
+                onCameraReady = { readyCamera, readyCapture ->
+                    camera = readyCamera
+                    imageCapture = readyCapture
+                    if (readyCamera != null) {
+                        val range = readyCamera.cameraInfo.exposureState.exposureCompensationRange
+                        exposureMin = range.lower
+                        exposureMax = range.upper
+                        exposureIndex = 0.coerceIn(range.lower, range.upper)
+                        zoomRatio = 1f
+                    }
+                }
             )
         } else {
             Column(
@@ -102,50 +124,119 @@ private fun LumaCameraScreen() {
 
         Column(
             modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth()
-                .background(Color(0x66000000)).padding(horizontal = 20.dp, vertical = 16.dp)
+                .background(Color(0x77000000)).padding(horizontal = 20.dp, vertical = 16.dp)
         ) {
             Text("LUMA PRO", color = Color.White, style = MaterialTheme.typography.titleLarge)
-            Text("CAMERA  •  LIVE VIEW", color = Color.LightGray, style = MaterialTheme.typography.labelSmall)
+            Text(
+                if (lensFacing == CameraSelector.LENS_FACING_BACK) "REAR CAMERA  •  JPEG"
+                else "FRONT CAMERA  •  JPEG",
+                color = Color.LightGray,
+                style = MaterialTheme.typography.labelSmall
+            )
         }
 
-        Row(
+        Column(
             modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth()
-                .background(Color(0x88000000)).padding(horizontal = 28.dp, vertical = 22.dp),
-            horizontalArrangement = Arrangement.SpaceEvenly,
-            verticalAlignment = Alignment.CenterVertically
+                .background(Color(0xCC101010)).padding(horizontal = 22.dp, vertical = 16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Text("PRO", color = Color.White)
-            Button(
-                modifier = Modifier.size(76.dp),
-                enabled = imageCapture != null && !isCapturing,
-                shape = CircleShape,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color.White,
-                    contentColor = Color.Black,
-                    disabledContainerColor = Color.Gray
-                ),
-                onClick = {
-                    val capture = imageCapture ?: return@Button
-                    isCapturing = true
-                    capturePhoto(
-                        context = context,
-                        imageCapture = capture,
-                        executor = ContextCompat.getMainExecutor(context),
-                        onComplete = { success ->
-                            isCapturing = false
-                            Toast.makeText(
-                                context,
-                                if (success) "Photo saved to Pictures/Luma Pro Camera"
-                                else "Unable to capture photo",
-                                Toast.LENGTH_SHORT
-                            ).show()
-                        }
-                    )
-                }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(if (isCapturing) "…" else "●")
+                Text("EXPOSURE", color = Color.White, style = MaterialTheme.typography.labelMedium)
+                Text(
+                    "EV ${if (exposureIndex > 0) "+" else ""}$exposureIndex",
+                    color = Color.White,
+                    style = MaterialTheme.typography.labelMedium
+                )
             }
-            Text("JPEG", color = Color.White)
+            Slider(
+                value = exposureIndex.toFloat().coerceIn(exposureMin.toFloat(), exposureMax.toFloat()),
+                onValueChange = { value ->
+                    val next = value.roundToInt().coerceIn(exposureMin, exposureMax)
+                    exposureIndex = next
+                    camera?.cameraControl?.setExposureCompensationIndex(next)
+                },
+                valueRange = exposureMin.toFloat()..exposureMax.toFloat(),
+                steps = (exposureMax - exposureMin - 1).coerceAtLeast(0),
+                enabled = camera != null && exposureMax > exposureMin
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Button(
+                    onClick = {
+                        val maxZoom = camera?.cameraInfo?.zoomState?.value?.maxZoomRatio ?: 1f
+                        val target = 2f.coerceAtMost(maxZoom)
+                        camera?.cameraControl?.setZoomRatio(target)
+                        zoomRatio = target
+                    },
+                    enabled = camera != null
+                ) { Text("2×") }
+                Button(
+                    onClick = {
+                        camera?.cameraControl?.setZoomRatio(1f)
+                        zoomRatio = 1f
+                    },
+                    enabled = camera != null
+                ) { Text("1×") }
+                Text(
+                    if (zoomRatio > 1.01f) "Zoom 2×" else "Zoom 1×",
+                    color = Color.LightGray
+                )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Button(
+                    onClick = {
+                        lensFacing = if (lensFacing == CameraSelector.LENS_FACING_BACK) {
+                            CameraSelector.LENS_FACING_FRONT
+                        } else {
+                            CameraSelector.LENS_FACING_BACK
+                        }
+                    },
+                    enabled = hasPermission
+                ) { Text("Flip") }
+
+                Button(
+                    modifier = Modifier.size(76.dp),
+                    enabled = imageCapture != null && !isCapturing,
+                    shape = CircleShape,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color.White,
+                        contentColor = Color.Black,
+                        disabledContainerColor = Color.Gray
+                    ),
+                    onClick = {
+                        val capture = imageCapture ?: return@Button
+                        isCapturing = true
+                        capturePhoto(
+                            context = context,
+                            imageCapture = capture,
+                            executor = ContextCompat.getMainExecutor(context),
+                            onComplete = { success ->
+                                isCapturing = false
+                                Toast.makeText(
+                                    context,
+                                    if (success) "Photo saved to Pictures/Luma Pro Camera"
+                                    else "Unable to capture photo",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                        )
+                    }
+                ) {
+                    Text(if (isCapturing) "…" else "●")
+                }
+                Text("JPEG", color = Color.White)
+            }
         }
     }
 }
@@ -188,7 +279,8 @@ private fun capturePhoto(
 @Composable
 private fun CameraPreview(
     modifier: Modifier = Modifier,
-    onImageCaptureReady: (ImageCapture?) -> Unit
+    lensFacing: Int,
+    onCameraReady: (Camera?, ImageCapture?) -> Unit
 ) {
     val context = LocalContext.current
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
@@ -201,7 +293,7 @@ private fun CameraPreview(
 
     AndroidView(modifier = modifier, factory = { previewView })
 
-    DisposableEffect(previewView, lifecycleOwner) {
+    DisposableEffect(previewView, lifecycleOwner, lensFacing) {
         val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
         val executor = ContextCompat.getMainExecutor(context)
         cameraProviderFuture.addListener({
@@ -213,22 +305,23 @@ private fun CameraPreview(
                 val capture = ImageCapture.Builder()
                     .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
                     .build()
+                val selector = CameraSelector.Builder().requireLensFacing(lensFacing).build()
 
                 cameraProvider.unbindAll()
-                cameraProvider.bindToLifecycle(
+                val boundCamera = cameraProvider.bindToLifecycle(
                     lifecycleOwner,
-                    CameraSelector.DEFAULT_BACK_CAMERA,
+                    selector,
                     preview,
                     capture
                 )
-                onImageCaptureReady(capture)
+                onCameraReady(boundCamera, capture)
             } catch (_: Exception) {
-                onImageCaptureReady(null)
+                onCameraReady(null, null)
             }
         }, executor)
 
         onDispose {
-            onImageCaptureReady(null)
+            onCameraReady(null, null)
             if (cameraProviderFuture.isDone) {
                 runCatching { cameraProviderFuture.get().unbindAll() }
             }
