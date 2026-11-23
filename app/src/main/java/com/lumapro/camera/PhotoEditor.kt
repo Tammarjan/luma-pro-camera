@@ -10,6 +10,7 @@ import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
 import android.widget.Toast
+import androidx.heifwriter.HeifWriter
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -46,6 +47,7 @@ internal fun PhotoEditorDialog(photoUri: Uri, onDismiss: () -> Unit) {
     var shadows by remember(photoUri) { mutableFloatStateOf(0f) }
     var processing by remember { mutableStateOf(false) }
     var saving by remember { mutableStateOf(false) }
+    var heifSaving by remember { mutableStateOf(false) }
     var showOriginal by remember { mutableStateOf(false) }
 
     LaunchedEffect(photoUri) {
@@ -159,19 +161,26 @@ internal fun PhotoEditorDialog(photoUri: Uri, onDismiss: () -> Unit) {
             }
         },
         confirmButton = {
-            Button(enabled = edited != null && !processing && !saving, onClick = {
-                val bitmap = edited ?: return@Button
-                if (showOriginal) {
-                    Toast.makeText(context, "Edited preview select karein, phir save karein", Toast.LENGTH_SHORT).show()
-                    return@Button
-                }
-                saving = true
-                saveEditedPhoto(context, bitmap) { success ->
-                    saving = false
-                    Toast.makeText(context, if (success) "Edited photo saved" else "Could not save edited photo", Toast.LENGTH_SHORT).show()
-                    if (success) onDismiss()
-                }
-            }) { Text(if (saving) "Saving…" else "Save Copy") }
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Button(enabled = edited != null && !processing && !saving && !heifSaving && !showOriginal, onClick = {
+                    val bitmap = edited ?: return@Button
+                    saving = true
+                    saveEditedPhoto(context, bitmap) { success ->
+                        saving = false
+                        Toast.makeText(context, if (success) "Edited JPEG saved" else "Could not save JPEG", Toast.LENGTH_SHORT).show()
+                        if (success) onDismiss()
+                    }
+                }) { Text(if (saving) "Saving…" else "Save JPEG") }
+                OutlinedButton(enabled = edited != null && !processing && !saving && !heifSaving && !showOriginal && Build.VERSION.SDK_INT >= 28, onClick = {
+                    val bitmap = edited ?: return@OutlinedButton
+                    heifSaving = true
+                    saveEditedHeif(context, bitmap) { success, message ->
+                        heifSaving = false
+                        Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+                        if (success) onDismiss()
+                    }
+                }) { Text(if (heifSaving) "Encoding…" else "Save HEIC") }
+            }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Close", color = Color.White) } }
     )
@@ -204,5 +213,55 @@ private fun saveEditedPhoto(context: Context, bitmap: Bitmap, onComplete: (Boole
             true
         }.getOrDefault(false)
         android.os.Handler(android.os.Looper.getMainLooper()).post { onComplete(success) }
+    }.start()
+}
+
+
+private fun saveEditedHeif(context: Context, bitmap: Bitmap, onComplete: (Boolean, String) -> Unit) {
+    if (Build.VERSION.SDK_INT < 28) {
+        onComplete(false, "HEIC export requires Android 9 or newer")
+        return
+    }
+    Thread {
+        val name = "Luma_Edit_" + SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date()) + ".heic"
+        val values = ContentValues().apply {
+            put(MediaStore.Images.Media.DISPLAY_NAME, name)
+            put(MediaStore.Images.Media.MIME_TYPE, "image/heic")
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/Luma Pro Camera")
+                put(MediaStore.Images.Media.IS_PENDING, 1)
+            }
+        }
+        var outputUri: Uri? = null
+        val result = runCatching {
+            outputUri = context.contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
+                ?: error("Could not create HEIC file")
+            context.contentResolver.openFileDescriptor(outputUri!!, "w")?.use { descriptor ->
+                val writer = HeifWriter.Builder(
+                    descriptor.fileDescriptor,
+                    bitmap.width,
+                    bitmap.height,
+                    HeifWriter.INPUT_MODE_BITMAP
+                ).setQuality(90).build()
+                try {
+                    writer.start()
+                    writer.addBitmap(bitmap)
+                    writer.stop(10_000_000L)
+                } finally {
+                    writer.close()
+                }
+            } ?: error("Could not open HEIC output")
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val ready = ContentValues().apply { put(MediaStore.Images.Media.IS_PENDING, 0) }
+                context.contentResolver.update(outputUri!!, ready, null, null)
+            }
+            true
+        }
+        if (result.isFailure && outputUri != null) {
+            runCatching { context.contentResolver.delete(outputUri!!, null, null) }
+        }
+        val success = result.isSuccess
+        val message = if (success) "HEIC copy saved" else "HEIC encoder unavailable or export failed on this device"
+        android.os.Handler(android.os.Looper.getMainLooper()).post { onComplete(success, message) }
     }.start()
 }

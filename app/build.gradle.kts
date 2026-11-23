@@ -52,4 +52,5 @@ dependencies {
     implementation("androidx.camera:camera-view:$cameraX")
     implementation("androidx.camera:camera-video:$cameraX")
     implementation("io.coil-kt:coil-compose:2.7.0")
+    implementation("androidx.heifwriter:heifwriter:1.1.0")
 }
