@@ -101,6 +101,8 @@ private fun LumaCameraScreen() {
     var flashAvailable by remember { mutableStateOf(false) }
     var flashEnabled by remember { mutableStateOf(false) }
     var gridEnabled by remember { mutableStateOf(false) }
+    var rawJpegSupported by remember { mutableStateOf(false) }
+    var rawCaptureEnabled by remember { mutableStateOf(false) }
     var manualSensorSupported by remember { mutableStateOf(false) }
     var manualExposureEnabled by remember { mutableStateOf(false) }
     var isoMin by remember { mutableIntStateOf(100) }
@@ -187,6 +189,10 @@ private fun LumaCameraScreen() {
                             }
                         }.onFailure { manualSensorSupported = false }
                     }
+                },
+                onRawCapabilityChanged = { supported ->
+                    rawJpegSupported = supported
+                    if (!supported) rawCaptureEnabled = false
                 },
                 onTapFocus = {
                     if (manualFocusEnabled) {
@@ -425,6 +431,7 @@ private fun LumaCameraScreen() {
                             context = context,
                             imageCapture = capture,
                             executor = ContextCompat.getMainExecutor(context),
+                            saveRawAndJpeg = rawCaptureEnabled && rawJpegSupported,
                             onComplete = { success ->
                                 isCapturing = false
                                 Toast.makeText(
@@ -439,7 +446,14 @@ private fun LumaCameraScreen() {
                 ) {
                     Text(if (isCapturing) "…" else "●")
                 }
-                Text("JPEG", color = Color.White)
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(if (rawCaptureEnabled && rawJpegSupported) "RAW + JPEG" else "JPEG", color = Color.White)
+                    if (rawJpegSupported) {
+                        Button(onClick = { rawCaptureEnabled = !rawCaptureEnabled }) {
+                            Text(if (rawCaptureEnabled) "RAW ON" else "RAW OFF")
+                        }
+                    }
+                }
             }
         }
     }
@@ -539,6 +553,7 @@ private fun capturePhoto(
     context: android.content.Context,
     imageCapture: ImageCapture,
     executor: Executor,
+    saveRawAndJpeg: Boolean,
     onComplete: (Boolean) -> Unit
 ) {
     val fileName = "Luma_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())}.jpg"
@@ -555,19 +570,50 @@ private fun capturePhoto(
         values
     ).build()
 
-    imageCapture.takePicture(
-        outputOptions,
-        executor,
-        object : ImageCapture.OnImageSavedCallback {
-            override fun onImageSaved(output: ImageCapture.OutputFileResults) {
-                onComplete(true)
-            }
-
-            override fun onError(exception: ImageCaptureException) {
-                onComplete(false)
+    if (saveRawAndJpeg && imageCapture.outputFormat == ImageCapture.OUTPUT_FORMAT_RAW_JPEG) {
+        val rawValues = ContentValues().apply {
+            put(MediaStore.Images.Media.DISPLAY_NAME, fileName.removeSuffix(".jpg") + ".dng")
+            put(MediaStore.Images.Media.MIME_TYPE, "image/x-adobe-dng")
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/Luma Pro Camera")
             }
         }
-    )
+        val rawOptions = ImageCapture.OutputFileOptions.Builder(
+            context.contentResolver,
+            MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+            rawValues
+        ).build()
+        val completed = java.util.concurrent.atomic.AtomicInteger(0)
+        val failed = java.util.concurrent.atomic.AtomicBoolean(false)
+        imageCapture.takePicture(
+            rawOptions,
+            outputOptions,
+            executor,
+            object : ImageCapture.OnImageSavedCallback {
+                override fun onImageSaved(output: ImageCapture.OutputFileResults) {
+                    if (completed.incrementAndGet() == 2 && !failed.get()) onComplete(true)
+                }
+
+                override fun onError(exception: ImageCaptureException) {
+                    if (failed.compareAndSet(false, true)) onComplete(false)
+                }
+            }
+        )
+    } else {
+        imageCapture.takePicture(
+            outputOptions,
+            executor,
+            object : ImageCapture.OnImageSavedCallback {
+                override fun onImageSaved(output: ImageCapture.OutputFileResults) {
+                    onComplete(true)
+                }
+
+                override fun onError(exception: ImageCaptureException) {
+                    onComplete(false)
+                }
+            }
+        )
+    }
 }
 
 @Composable
@@ -575,7 +621,8 @@ private fun CameraPreview(
     modifier: Modifier = Modifier,
     lensFacing: Int,
     onCameraReady: (Camera?, ImageCapture?) -> Unit,
-    onTapFocus: () -> Unit
+    onTapFocus: () -> Unit,
+    onRawCapabilityChanged: (Boolean) -> Unit
 ) {
     val context = LocalContext.current
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
@@ -615,9 +662,15 @@ private fun CameraPreview(
                 val preview = Preview.Builder().build().also {
                     it.surfaceProvider = previewView.surfaceProvider
                 }
-                val capture = ImageCapture.Builder()
+                val supportedFormats = runCatching {
+                    ImageCapture.getImageCaptureCapabilities(cameraProvider.getCameraInfo(selector))
+                        .supportedOutputFormats
+                }.getOrDefault(setOf(ImageCapture.OUTPUT_FORMAT_JPEG))
+                val supportsRawJpeg = supportedFormats.contains(ImageCapture.OUTPUT_FORMAT_RAW_JPEG)
+                val captureBuilder = ImageCapture.Builder()
                     .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
-                    .build()
+                if (supportsRawJpeg) captureBuilder.setOutputFormat(ImageCapture.OUTPUT_FORMAT_RAW_JPEG)
+                val capture = captureBuilder.build()
                 val selector = CameraSelector.Builder().requireLensFacing(lensFacing).build()
 
                 cameraProvider.unbindAll()
@@ -628,6 +681,7 @@ private fun CameraPreview(
                     capture
                 )
                 onCameraReady(boundCamera, capture)
+                onRawCapabilityChanged(supportsRawJpeg)
             } catch (_: Exception) {
                 onCameraReady(null, null)
             }
@@ -636,6 +690,7 @@ private fun CameraPreview(
         onDispose {
             boundCamera = null
             onCameraReady(null, null)
+            onRawCapabilityChanged(false)
             if (cameraProviderFuture.isDone) {
                 runCatching { cameraProviderFuture.get().unbindAll() }
             }
