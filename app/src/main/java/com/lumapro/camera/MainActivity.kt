@@ -22,6 +22,12 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.result.IntentSenderRequest
 import androidx.camera.core.Camera
+import androidx.camera.core.CameraEffect
+import androidx.camera.core.UseCaseGroup
+import androidx.camera.media3.effect.Media3Effect
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.effect.Brightness
+import androidx.media3.effect.Contrast
 import androidx.camera.core.CameraSelector
 import androidx.camera.camera2.interop.Camera2CameraControl
 import androidx.camera.camera2.interop.Camera2CameraInfo
@@ -215,6 +221,8 @@ private fun LumaCameraScreen() {
     var exposureMin by remember { mutableIntStateOf(0) }
     var exposureMax by remember { mutableIntStateOf(0) }
     var exposureIndex by remember { mutableIntStateOf(0) }
+    var liveBrightness by remember { mutableFloatStateOf(0f) }
+    var liveContrast by remember { mutableFloatStateOf(0f) }
     var zoomRatio by remember { mutableStateOf(1f) }
     var minZoomRatio by remember { mutableStateOf(1f) }
     var maxZoomRatio by remember { mutableStateOf(1f) }
@@ -321,6 +329,8 @@ private fun LumaCameraScreen() {
             CameraPreview(
                 modifier = Modifier.fillMaxSize(),
                 lensFacing = lensFacing,
+                liveBrightness = liveBrightness,
+                liveContrast = liveContrast,
                 jpegQuality = jpegQuality,
                 maximizeQuality = maximizeQuality,
                 rawCaptureEnabled = rawCaptureEnabled,
@@ -606,6 +616,11 @@ private fun LumaCameraScreen() {
                             valueRange = exposureMin.toFloat()..exposureMax.toFloat(),
                             steps = (exposureMax - exposureMin - 1).coerceAtLeast(0), enabled = camera != null && !manualExposureEnabled
                         ) else Text("Exposure adjustment unavailable", color = Color.LightGray)
+                        Text("LIVE BRIGHTNESS  ${(liveBrightness * 100).roundToInt()}%", color = Color.White, style = MaterialTheme.typography.labelSmall)
+                        Slider(value = liveBrightness, onValueChange = { liveBrightness = it }, valueRange = -1f..1f)
+                        Text("LIVE CONTRAST  ${(liveContrast * 100).roundToInt()}%", color = Color.White, style = MaterialTheme.typography.labelSmall)
+                        Slider(value = liveContrast, onValueChange = { liveContrast = it }, valueRange = -1f..1f)
+                        Text("Live preview/video only — still photo effects are not connected yet.", color = Color(0xFFFFD54F), style = MaterialTheme.typography.labelSmall)
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                             Text("Capture timer", color = Color.White, style = MaterialTheme.typography.labelSmall)
                             Text(if (captureTimerSeconds == 0) "Off" else "${captureTimerSeconds}s", color = Color.LightGray, style = MaterialTheme.typography.labelSmall)
@@ -1040,9 +1055,12 @@ private fun capturePhoto(
 }
 
 @Composable
+@OptIn(UnstableApi::class)
 private fun CameraPreview(
     modifier: Modifier = Modifier,
     lensFacing: Int,
+    liveBrightness: Float,
+    liveContrast: Float,
     jpegQuality: Int,
     maximizeQuality: Boolean,
     rawCaptureEnabled: Boolean,
@@ -1063,6 +1081,12 @@ private fun CameraPreview(
     }
 
     var boundCamera by remember { mutableStateOf<Camera?>(null) }
+    var activeMedia3Effect by remember { mutableStateOf<Media3Effect?>(null) }
+    SideEffect {
+        activeMedia3Effect?.setEffects(
+            listOf(Brightness(liveBrightness.coerceIn(-1f, 1f)), Contrast(liveContrast.coerceIn(-1f, 1f)))
+        )
+    }
     AndroidView(
         modifier = modifier.pointerInput(previewView, lensFacing) {
             detectTapGestures { offset ->
@@ -1086,6 +1110,13 @@ private fun CameraPreview(
         val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
         val executor = ContextCompat.getMainExecutor(context)
         val analysisExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
+        val effectExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
+        val media3Effect = runCatching {
+            Media3Effect(context, CameraEffect.PREVIEW or CameraEffect.VIDEO_CAPTURE, effectExecutor) { error ->
+                android.util.Log.e("LumaProCamera", "Live GPU effect failed", error)
+            }.also { it.setEffects(listOf(Brightness(liveBrightness), Contrast(liveContrast))) }
+        }.getOrNull()
+        activeMedia3Effect = media3Effect
         val lastAnalysisUpdate = java.util.concurrent.atomic.AtomicLong(0L)
         cameraProviderFuture.addListener({
             try {
@@ -1175,20 +1206,24 @@ private fun CameraPreview(
                         }
                     }
                     try {
-                        boundCamera = cameraProvider.bindToLifecycle(
-                            lifecycleOwner, selector, preview, capture, video, analysis
-                        )
+                        val groupBuilder = UseCaseGroup.Builder()
+                            .addUseCase(preview).addUseCase(capture).addUseCase(video).addUseCase(analysis)
+                        if (media3Effect != null) groupBuilder.addEffect(media3Effect)
+                        boundCamera = cameraProvider.bindToLifecycle(lifecycleOwner, selector, groupBuilder.build())
                     } catch (_: Exception) {
                         analysis.clearAnalyzer()
                         analysisExecutor.shutdown()
-                        boundCamera = cameraProvider.bindToLifecycle(
-                            lifecycleOwner, selector, preview, capture, video
-                        )
+                        val fallbackBuilder = UseCaseGroup.Builder().addUseCase(preview).addUseCase(capture).addUseCase(video)
+                        boundCamera = cameraProvider.bindToLifecycle(lifecycleOwner, selector, fallbackBuilder.build())
                     }
                 } else {
-                    boundCamera = cameraProvider.bindToLifecycle(
-                        lifecycleOwner, selector, preview, capture
-                    )
+                    try {
+                        val groupBuilder = UseCaseGroup.Builder().addUseCase(preview).addUseCase(capture)
+                        if (media3Effect != null) groupBuilder.addEffect(media3Effect)
+                        boundCamera = cameraProvider.bindToLifecycle(lifecycleOwner, selector, groupBuilder.build())
+                    } catch (_: Exception) {
+                        boundCamera = cameraProvider.bindToLifecycle(lifecycleOwner, selector, preview, capture)
+                    }
                     onAnalysis(List(32) { 0f }, 0f, emptyList(), emptyList())
                 }
                 onCameraReady(boundCamera, capture, video)
@@ -1206,6 +1241,9 @@ private fun CameraPreview(
                 runCatching { cameraProviderFuture.get().unbindAll() }
             }
             analysisExecutor.shutdown()
+            activeMedia3Effect = null
+            runCatching { media3Effect?.close() }
+            effectExecutor.shutdown()
         }
     }
 }
