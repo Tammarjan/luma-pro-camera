@@ -278,15 +278,27 @@ private fun saveEditedPhoto(context: Context, bitmap: Bitmap, onComplete: (Boole
         val values = ContentValues().apply {
             put(MediaStore.Images.Media.DISPLAY_NAME, name)
             put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/Luma Pro Camera")
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/Luma Pro Camera")
+                put(MediaStore.Images.Media.IS_PENDING, 1)
+            }
         }
+        var outputUri: Uri? = null
         val success = runCatching {
-            val uri = context.contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values) ?: error("No output URI")
+            val uri = context.contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
+                ?: error("No output URI")
+            outputUri = uri
             context.contentResolver.openOutputStream(uri)?.use { stream ->
-                if (!bitmap.compress(Bitmap.CompressFormat.JPEG, 95, stream)) error("JPEG encode failed")
+                if (!bitmap.compress(Bitmap.CompressFormat.JPEG, 96, stream)) error("JPEG encode failed")
+                stream.flush()
             } ?: error("No output stream")
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val publish = ContentValues().apply { put(MediaStore.Images.Media.IS_PENDING, 0) }
+                if (context.contentResolver.update(uri, publish, null, null) <= 0) error("Could not publish JPEG")
+            }
             true
         }.getOrDefault(false)
+        if (!success) outputUri?.let { uri -> runCatching { context.contentResolver.delete(uri, null, null) } }
         android.os.Handler(android.os.Looper.getMainLooper()).post { onComplete(success) }
     }.start()
 }
