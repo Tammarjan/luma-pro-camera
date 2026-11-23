@@ -14,6 +14,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.result.IntentSenderRequest
 import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
 import androidx.camera.camera2.interop.Camera2CameraControl
@@ -104,6 +105,18 @@ private fun LumaCameraScreen() {
     val context = LocalContext.current
     var showGallery by remember { mutableStateOf(false) }
     var galleryPhotos by remember { mutableStateOf<List<GalleryPhoto>>(emptyList()) }
+    var selectedPhoto by remember { mutableStateOf<GalleryPhoto?>(null) }
+    var showDeleteConfirmation by remember { mutableStateOf(false) }
+    val deletePhotoLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartIntentSenderForResult()
+    ) { result ->
+        if (result.resultCode == android.app.Activity.RESULT_OK) {
+            selectedPhoto = null
+            showGallery = false
+            showGallery = true
+            Toast.makeText(context, "Photo deleted", Toast.LENGTH_SHORT).show()
+        }
+    }
     LaunchedEffect(showGallery) {
         if (showGallery) {
             galleryPhotos = withContext(Dispatchers.IO) {
@@ -594,7 +607,30 @@ private fun LumaCameraScreen() {
                     }
                     Text("${galleryPhotos.size} photos", color = Color.LightGray)
                     Spacer(Modifier.height(12.dp))
-                    if (galleryPhotos.isEmpty()) {
+                    if (selectedPhoto != null) {
+                    Text("Selected: ${selectedPhoto?.name}", color = Color.White, maxLines = 1)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = {
+                            val photo = selectedPhoto ?: return@Button
+                            val intent = Intent(Intent.ACTION_VIEW).apply {
+                                setDataAndType(photo.uri, "image/*")
+                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            }
+                            runCatching { context.startActivity(intent) }
+                        }) { Text("Open") }
+                        Button(onClick = {
+                            val photo = selectedPhoto ?: return@Button
+                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                type = "image/jpeg"
+                                putExtra(Intent.EXTRA_STREAM, photo.uri)
+                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            }
+                            context.startActivity(Intent.createChooser(shareIntent, "Share photo"))
+                        }) { Text("Share") }
+                        Button(onClick = { showDeleteConfirmation = true }) { Text("Delete") }
+                    }
+                }
+                if (galleryPhotos.isEmpty()) {
                         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                             Text("No Luma photos yet", color = Color.White)
                         }
@@ -610,18 +646,50 @@ private fun LumaCameraScreen() {
                                     model = photo.uri,
                                     contentDescription = photo.name,
                                     modifier = Modifier.fillMaxWidth().height(116.dp).clickable {
-                                        val intent = Intent(Intent.ACTION_VIEW).apply {
-                                            setDataAndType(photo.uri, "image/*")
-                                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                        }
-                                        runCatching { context.startActivity(intent) }
-                                    },
+                                        selectedPhoto = if (selectedPhoto?.uri == photo.uri) null else photo
+                                    }.background(if (selectedPhoto?.uri == photo.uri) Color(0xFF526BFF) else Color.Transparent),
                                     contentScale = ContentScale.Crop
                                 )
                             }
                         }
                     }
                 }
+            }
+            if (showDeleteConfirmation) {
+                androidx.compose.material3.AlertDialog(
+                    onDismissRequest = { showDeleteConfirmation = false },
+                    title = { Text("Delete photo?") },
+                    text = { Text("This photo will be removed from your Luma gallery.") },
+                    confirmButton = {
+                        Button(onClick = {
+                            val photo = selectedPhoto
+                            showDeleteConfirmation = false
+                            if (photo != null) {
+                                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                                    runCatching {
+                                        val request = MediaStore.createDeleteRequest(context.contentResolver, listOf(photo.uri))
+                                        deletePhotoLauncher.launch(IntentSenderRequest.Builder(request.intentSender).build())
+                                    }.onFailure {
+                                        Toast.makeText(context, "Unable to request deletion", Toast.LENGTH_SHORT).show()
+                                    }
+                                } else {
+                                    val deleted = runCatching { context.contentResolver.delete(photo.uri, null, null) > 0 }.getOrDefault(false)
+                                    if (deleted) {
+                                        selectedPhoto = null
+                                        showGallery = false
+                                        showGallery = true
+                                        Toast.makeText(context, "Photo deleted", Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        Toast.makeText(context, "Unable to delete photo", Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            }
+                        }) { Text("Delete") }
+                    },
+                    dismissButton = {
+                        Button(onClick = { showDeleteConfirmation = false }) { Text("Cancel") }
+                    }
+                )
             }
         }
     }
