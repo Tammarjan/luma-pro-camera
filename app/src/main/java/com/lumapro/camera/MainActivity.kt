@@ -732,7 +732,7 @@ private fun CameraPreview(
                 val supportsRawJpeg = supportedFormats.contains(ImageCapture.OUTPUT_FORMAT_RAW_JPEG)
                 val captureBuilder = ImageCapture.Builder()
                     .setCaptureMode(if (maximizeQuality) ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY else ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
-                    .setJpegQuality(jpegQuality.toByte())
+                    .setJpegQuality(jpegQuality)
                 if (supportsRawJpeg) captureBuilder.setOutputFormat(ImageCapture.OUTPUT_FORMAT_RAW_JPEG)
                 val capture = captureBuilder.build()
 
