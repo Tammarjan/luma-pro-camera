@@ -203,7 +203,7 @@ private fun LumaCameraScreen() {
                     },
                     valueRange = exposureMin.toFloat()..exposureMax.toFloat(),
                     steps = (exposureMax - exposureMin - 1).coerceAtLeast(0),
-                    enabled = camera != null
+                    enabled = camera != null && !manualExposureEnabled
                 )
             } else {
                 Text("Exposure adjustment unavailable on this camera", color = Color.LightGray)
