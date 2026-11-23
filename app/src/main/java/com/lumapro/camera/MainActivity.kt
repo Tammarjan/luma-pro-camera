@@ -106,6 +106,7 @@ private fun LumaCameraScreen() {
     var showGallery by remember { mutableStateOf(false) }
     var galleryPhotos by remember { mutableStateOf<List<GalleryPhoto>>(emptyList()) }
     var selectedPhoto by remember { mutableStateOf<GalleryPhoto?>(null) }
+    var selectedPhotoUris by remember { mutableStateOf<Set<String>>(emptySet()) }
     var showDeleteConfirmation by remember { mutableStateOf(false) }
     val deletePhotoLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartIntentSenderForResult()
@@ -605,7 +606,21 @@ private fun LumaCameraScreen() {
                         Text("Luma Gallery", color = Color.White, style = MaterialTheme.typography.titleLarge)
                         Button(onClick = { showGallery = false }) { Text("Close") }
                     }
-                    Text("${galleryPhotos.size} photos", color = Color.LightGray)
+                    Text("${galleryPhotos.size} photos • ${selectedPhotoUris.size} selected", color = Color.LightGray)
+                    if (selectedPhotoUris.size > 1) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(onClick = {
+                                val uris = galleryPhotos.filter { selectedPhotoUris.contains(it.uri.toString()) }.map { it.uri }
+                                val shareIntent = Intent(Intent.ACTION_SEND_MULTIPLE).apply {
+                                    type = "image/*"
+                                    putParcelableArrayListExtra(Intent.EXTRA_STREAM, ArrayList(uris))
+                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                }
+                                context.startActivity(Intent.createChooser(shareIntent, "Share photos"))
+                            }) { Text("Share ${selectedPhotoUris.size}") }
+                            Button(onClick = { selectedPhotoUris = emptySet(); selectedPhoto = null }) { Text("Clear") }
+                        }
+                    }
                     Spacer(Modifier.height(12.dp))
                     if (selectedPhoto != null) {
                     Text("Selected: ${selectedPhoto?.name}", color = Color.White, maxLines = 1)
@@ -646,8 +661,10 @@ private fun LumaCameraScreen() {
                                     model = photo.uri,
                                     contentDescription = photo.name,
                                     modifier = Modifier.fillMaxWidth().height(116.dp).clickable {
+                                        val key = photo.uri.toString()
+                                        selectedPhotoUris = if (selectedPhotoUris.contains(key)) selectedPhotoUris - key else selectedPhotoUris + key
                                         selectedPhoto = if (selectedPhoto?.uri == photo.uri) null else photo
-                                    }.background(if (selectedPhoto?.uri == photo.uri) Color(0xFF526BFF) else Color.Transparent),
+                                    }.background(if (selectedPhotoUris.contains(photo.uri.toString())) Color(0xFF526BFF) else Color.Transparent),
                                     contentScale = ContentScale.Crop
                                 )
                             }
