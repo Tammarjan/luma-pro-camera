@@ -11,6 +11,7 @@ import android.os.Bundle
 import android.provider.MediaStore
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import android.view.KeyEvent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -53,6 +54,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -67,6 +69,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.unit.dp
@@ -87,6 +91,16 @@ import kotlinx.coroutines.withContext
 import coil.compose.AsyncImage
 
 class MainActivity : ComponentActivity() {
+    var volumeCaptureAction: (() -> Unit)? = null
+
+    override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
+        if ((keyCode == KeyEvent.KEYCODE_VOLUME_DOWN || keyCode == KeyEvent.KEYCODE_VOLUME_UP) && volumeCaptureAction != null) {
+            volumeCaptureAction?.invoke()
+            return true
+        }
+        return super.onKeyDown(keyCode, event)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
@@ -104,6 +118,7 @@ private data class GalleryPhoto(val uri: Uri, val name: String)
 @Composable
 private fun LumaCameraScreen() {
     val context = LocalContext.current
+    val haptic = LocalHapticFeedback.current
     var showGallery by remember { mutableStateOf(false) }
     var showProSettings by remember { mutableStateOf(false) }
     var galleryPhotos by remember { mutableStateOf<List<GalleryPhoto>>(emptyList()) }
@@ -191,6 +206,41 @@ private fun LumaCameraScreen() {
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted -> hasPermission = granted }
+
+    val performCapture: () -> Unit = {
+        val capture = imageCapture
+        if (capture != null && !isCapturing) {
+            isCapturing = true
+            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+            cameraScope.launch {
+                timerCountdown = captureTimerSeconds
+                while (timerCountdown > 0) {
+                    delay(1000)
+                    timerCountdown -= 1
+                }
+                capturePhoto(
+                    context = context,
+                    imageCapture = capture,
+                    executor = ContextCompat.getMainExecutor(context),
+                    saveRawAndJpeg = rawCaptureEnabled && rawJpegSupported,
+                    onComplete = { success ->
+                        isCapturing = false
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        Toast.makeText(
+                            context,
+                            if (success) "Photo saved to Pictures/Luma Pro Camera"
+                            else "Capture failed. Try again.",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                )
+            }
+        }
+    }
+    SideEffect {
+        (context as? MainActivity)?.volumeCaptureAction =
+            if (hasPermission) performCapture else null
+    }
 
     Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
         if (hasPermission) {
@@ -579,32 +629,7 @@ private fun LumaCameraScreen() {
                         contentColor = Color.Black,
                         disabledContainerColor = Color.Gray
                     ),
-                    onClick = {
-                        val capture = imageCapture ?: return@Button
-                        isCapturing = true
-                        cameraScope.launch {
-                            timerCountdown = captureTimerSeconds
-                            while (timerCountdown > 0) {
-                                delay(1000)
-                                timerCountdown -= 1
-                            }
-                            capturePhoto(
-                                context = context,
-                                imageCapture = capture,
-                                executor = ContextCompat.getMainExecutor(context),
-                                saveRawAndJpeg = rawCaptureEnabled && rawJpegSupported,
-                                onComplete = { success ->
-                                    isCapturing = false
-                                    Toast.makeText(
-                                        context,
-                                        if (success) "Photo saved to Pictures/Luma Pro Camera"
-                                        else "Unable to capture photo",
-                                        Toast.LENGTH_SHORT
-                                    ).show()
-                                }
-                            )
-                        }
-                    }
+                    onClick = { performCapture() }
                 ) {
                     Text(if (timerCountdown > 0) timerCountdown.toString() else if (isCapturing) "…" else "●")
                 }
