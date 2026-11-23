@@ -24,6 +24,7 @@ import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -52,6 +53,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -98,6 +100,7 @@ private fun LumaCameraScreen() {
     var zoomRatio by remember { mutableStateOf(1f) }
     var flashAvailable by remember { mutableStateOf(false) }
     var flashEnabled by remember { mutableStateOf(false) }
+    var gridEnabled by remember { mutableStateOf(false) }
     var manualSensorSupported by remember { mutableStateOf(false) }
     var manualExposureEnabled by remember { mutableStateOf(false) }
     var isoMin by remember { mutableIntStateOf(100) }
@@ -193,6 +196,7 @@ private fun LumaCameraScreen() {
                     }
                 }
             )
+            if (gridEnabled) RuleOfThirdsGrid(Modifier.fillMaxSize())
         } else {
             Column(
                 modifier = Modifier.align(Alignment.Center).padding(24.dp),
@@ -359,7 +363,9 @@ private fun LumaCameraScreen() {
                 ) {
                     Text(if (!flashAvailable) "Flash N/A" else if (flashEnabled) "Flash ON" else "Flash OFF")
                 }
-                Text("Tap preview to focus", color = Color.LightGray, style = MaterialTheme.typography.labelSmall)
+                Button(onClick = { gridEnabled = !gridEnabled }) {
+                    Text(if (gridEnabled) "Grid ON" else "Grid OFF")
+                }
             }
             Row(
                 modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp),
@@ -436,6 +442,23 @@ private fun LumaCameraScreen() {
                 Text("JPEG", color = Color.White)
             }
         }
+    }
+}
+
+
+@Composable
+private fun RuleOfThirdsGrid(modifier: Modifier = Modifier) {
+    Canvas(modifier = modifier) {
+        val lineColor = Color.White.copy(alpha = 0.48f)
+        val stroke = 1.dp.toPx()
+        val verticalOne = size.width / 3f
+        val verticalTwo = size.width * 2f / 3f
+        val horizontalOne = size.height / 3f
+        val horizontalTwo = size.height * 2f / 3f
+        drawLine(lineColor, Offset(verticalOne, 0f), Offset(verticalOne, size.height), stroke)
+        drawLine(lineColor, Offset(verticalTwo, 0f), Offset(verticalTwo, size.height), stroke)
+        drawLine(lineColor, Offset(0f, horizontalOne), Offset(size.width, horizontalOne), stroke)
+        drawLine(lineColor, Offset(0f, horizontalTwo), Offset(size.width, horizontalTwo), stroke)
     }
 }
 
