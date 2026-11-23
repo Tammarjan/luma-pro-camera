@@ -21,6 +21,8 @@ import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.FocusMeteringAction
 import androidx.camera.core.Preview
+import androidx.camera.core.resolutionselector.AspectRatioStrategy
+import androidx.camera.core.resolutionselector.ResolutionSelector
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.background
@@ -98,6 +100,7 @@ private fun LumaCameraScreen() {
     var captureTimerSeconds by remember { mutableIntStateOf(0) }
     var jpegQuality by remember { mutableIntStateOf(95) }
     var maximizeQuality by remember { mutableStateOf(true) }
+    var aspectRatioWide by remember { mutableStateOf(false) }
     var timerCountdown by remember { mutableIntStateOf(0) }
     val cameraScope = androidx.compose.runtime.rememberCoroutineScope()
     var lensFacing by remember { mutableIntStateOf(CameraSelector.LENS_FACING_BACK) }
@@ -138,6 +141,7 @@ private fun LumaCameraScreen() {
                 lensFacing = lensFacing,
                 jpegQuality = jpegQuality,
                 maximizeQuality = maximizeQuality,
+                aspectRatioWide = aspectRatioWide,
                 onCameraReady = { readyCamera, readyCapture ->
                     camera = readyCamera
                     imageCapture = readyCapture
@@ -275,6 +279,16 @@ private fun LumaCameraScreen() {
                 steps = 29,
                 enabled = !isCapturing
             )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("ASPECT RATIO", color = Color.White, style = MaterialTheme.typography.labelMedium)
+                Button(onClick = { aspectRatioWide = !aspectRatioWide }, enabled = !isCapturing) {
+                    Text(if (aspectRatioWide) "16:9" else "4:3")
+                }
+            }
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -682,6 +696,7 @@ private fun CameraPreview(
     lensFacing: Int,
     jpegQuality: Int,
     maximizeQuality: Boolean,
+    aspectRatioWide: Boolean,
     onCameraReady: (Camera?, ImageCapture?) -> Unit,
     onTapFocus: () -> Unit,
     onRawCapabilityChanged: (Boolean) -> Unit
@@ -715,7 +730,7 @@ private fun CameraPreview(
         factory = { previewView }
     )
 
-    DisposableEffect(previewView, lifecycleOwner, lensFacing, jpegQuality, maximizeQuality) {
+    DisposableEffect(previewView, lifecycleOwner, lensFacing, jpegQuality, maximizeQuality, aspectRatioWide) {
         val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
         val executor = ContextCompat.getMainExecutor(context)
         cameraProviderFuture.addListener({
@@ -730,7 +745,14 @@ private fun CameraPreview(
                         .supportedOutputFormats
                 }.getOrDefault(setOf(ImageCapture.OUTPUT_FORMAT_JPEG))
                 val supportsRawJpeg = supportedFormats.contains(ImageCapture.OUTPUT_FORMAT_RAW_JPEG)
+                val resolutionSelector = ResolutionSelector.Builder()
+                    .setAspectRatioStrategy(
+                        if (aspectRatioWide) AspectRatioStrategy.RATIO_16_9_FALLBACK_AUTO_STRATEGY
+                        else AspectRatioStrategy.RATIO_4_3_FALLBACK_AUTO_STRATEGY
+                    )
+                    .build()
                 val captureBuilder = ImageCapture.Builder()
+                    .setResolutionSelector(resolutionSelector)
                     .setCaptureMode(if (maximizeQuality) ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY else ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
                     .setJpegQuality(jpegQuality)
                 if (supportsRawJpeg) captureBuilder.setOutputFormat(ImageCapture.OUTPUT_FORMAT_RAW_JPEG)
