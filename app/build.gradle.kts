@@ -51,5 +51,7 @@ dependencies {
     implementation("androidx.camera:camera-lifecycle:$cameraX")
     implementation("androidx.camera:camera-view:$cameraX")
     implementation("androidx.camera:camera-video:$cameraX")
+    implementation("androidx.camera.media3:media3-effect:1.0.0-alpha04")
+    implementation("androidx.media3:media3-effect:1.7.1")
     implementation("io.coil-kt:coil-compose:2.7.0")
 }
