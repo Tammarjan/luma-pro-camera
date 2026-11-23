@@ -140,6 +140,7 @@ private fun LumaCameraScreen() {
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
     var showGallery by remember { mutableStateOf(false) }
+    var editingPhoto by remember { mutableStateOf<GalleryPhoto?>(null) }
     var showProSettings by remember { mutableStateOf(false) }
     var galleryPhotos by remember { mutableStateOf<List<GalleryPhoto>>(emptyList()) }
     var selectedPhoto by remember { mutableStateOf<GalleryPhoto?>(null) }
@@ -852,6 +853,7 @@ private fun LumaCameraScreen() {
                             }
                             context.startActivity(Intent.createChooser(shareIntent, "Share photo"))
                         }) { Text("Share") }
+                        Button(onClick = { editingPhoto = selectedPhoto }) { Text("Edit") }
                         Button(onClick = { showDeleteConfirmation = true }) { Text("Delete") }
                     }
                 }
@@ -917,6 +919,9 @@ private fun LumaCameraScreen() {
                         Button(onClick = { showDeleteConfirmation = false }) { Text("Cancel") }
                     }
                 )
+            }
+            if (editingPhoto != null) {
+                PhotoEditorDialog(photoUri = editingPhoto!!.uri, onDismiss = { editingPhoto = null })
             }
         }
     }
