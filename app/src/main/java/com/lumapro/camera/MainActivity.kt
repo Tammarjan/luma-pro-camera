@@ -260,6 +260,7 @@ private fun LumaCameraScreen() {
                 lensFacing = lensFacing,
                 jpegQuality = jpegQuality,
                 maximizeQuality = maximizeQuality,
+                rawCaptureEnabled = rawCaptureEnabled,
                 aspectRatioWide = aspectRatioWide,
                 onCameraReady = { readyCamera, readyCapture ->
                     camera = readyCamera
@@ -906,49 +907,53 @@ private fun capturePhoto(
         values
     ).build()
 
-    if (saveRawAndJpeg && imageCapture.outputFormat == ImageCapture.OUTPUT_FORMAT_RAW_JPEG) {
-        val rawValues = ContentValues().apply {
-            put(MediaStore.Images.Media.DISPLAY_NAME, fileName.removeSuffix(".jpg") + ".dng")
-            put(MediaStore.Images.Media.MIME_TYPE, "image/x-adobe-dng")
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
-                put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/Luma Pro Camera")
+    try {
+        if (saveRawAndJpeg && imageCapture.outputFormat == ImageCapture.OUTPUT_FORMAT_RAW_JPEG) {
+            val rawValues = ContentValues().apply {
+                put(MediaStore.Images.Media.DISPLAY_NAME, fileName.removeSuffix(".jpg") + ".dng")
+                put(MediaStore.Images.Media.MIME_TYPE, "image/x-adobe-dng")
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                    put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/Luma Pro Camera")
+                }
             }
+            val rawOptions = ImageCapture.OutputFileOptions.Builder(
+                context.contentResolver,
+                MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                rawValues
+            ).build()
+            val completed = java.util.concurrent.atomic.AtomicInteger(0)
+            val failed = java.util.concurrent.atomic.AtomicBoolean(false)
+            imageCapture.takePicture(
+                rawOptions,
+                outputOptions,
+                executor,
+                object : ImageCapture.OnImageSavedCallback {
+                    override fun onImageSaved(output: ImageCapture.OutputFileResults) {
+                        if (completed.incrementAndGet() == 2 && !failed.get()) onComplete(true)
+                    }
+    
+                    override fun onError(exception: ImageCaptureException) {
+                        if (failed.compareAndSet(false, true)) onComplete(false)
+                    }
+                }
+            )
+        } else {
+            imageCapture.takePicture(
+                outputOptions,
+                executor,
+                object : ImageCapture.OnImageSavedCallback {
+                    override fun onImageSaved(output: ImageCapture.OutputFileResults) {
+                        onComplete(true)
+                    }
+    
+                    override fun onError(exception: ImageCaptureException) {
+                        onComplete(false)
+                    }
+                }
+            )
         }
-        val rawOptions = ImageCapture.OutputFileOptions.Builder(
-            context.contentResolver,
-            MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-            rawValues
-        ).build()
-        val completed = java.util.concurrent.atomic.AtomicInteger(0)
-        val failed = java.util.concurrent.atomic.AtomicBoolean(false)
-        imageCapture.takePicture(
-            rawOptions,
-            outputOptions,
-            executor,
-            object : ImageCapture.OnImageSavedCallback {
-                override fun onImageSaved(output: ImageCapture.OutputFileResults) {
-                    if (completed.incrementAndGet() == 2 && !failed.get()) onComplete(true)
-                }
-
-                override fun onError(exception: ImageCaptureException) {
-                    if (failed.compareAndSet(false, true)) onComplete(false)
-                }
-            }
-        )
-    } else {
-        imageCapture.takePicture(
-            outputOptions,
-            executor,
-            object : ImageCapture.OnImageSavedCallback {
-                override fun onImageSaved(output: ImageCapture.OutputFileResults) {
-                    onComplete(true)
-                }
-
-                override fun onError(exception: ImageCaptureException) {
-                    onComplete(false)
-                }
-            }
-        )
+    } catch (exception: Exception) {
+        onComplete(false)
     }
 }
 
@@ -958,6 +963,7 @@ private fun CameraPreview(
     lensFacing: Int,
     jpegQuality: Int,
     maximizeQuality: Boolean,
+    rawCaptureEnabled: Boolean,
     aspectRatioWide: Boolean,
     onCameraReady: (Camera?, ImageCapture?) -> Unit,
     onTapFocus: () -> Unit,
@@ -992,7 +998,7 @@ private fun CameraPreview(
         factory = { previewView }
     )
 
-    DisposableEffect(previewView, lifecycleOwner, lensFacing, jpegQuality, maximizeQuality, aspectRatioWide) {
+    DisposableEffect(previewView, lifecycleOwner, lensFacing, jpegQuality, maximizeQuality, rawCaptureEnabled, aspectRatioWide) {
         val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
         val executor = ContextCompat.getMainExecutor(context)
         cameraProviderFuture.addListener({
@@ -1017,7 +1023,9 @@ private fun CameraPreview(
                     .setResolutionSelector(resolutionSelector)
                     .setCaptureMode(if (maximizeQuality) ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY else ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
                     .setJpegQuality(jpegQuality)
-                if (supportsRawJpeg) captureBuilder.setOutputFormat(ImageCapture.OUTPUT_FORMAT_RAW_JPEG)
+                if (supportsRawJpeg && rawCaptureEnabled) {
+                    captureBuilder.setOutputFormat(ImageCapture.OUTPUT_FORMAT_RAW_JPEG)
+                }
                 val capture = captureBuilder.build()
 
                 cameraProvider.unbindAll()
