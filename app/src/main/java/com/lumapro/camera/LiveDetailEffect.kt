@@ -41,7 +41,9 @@ private class LiveDetailShaderProgram(
 
     init {
         try {
-            glProgram = GlProgram(context, R.raw.live_detail_vertex, R.raw.live_detail_fragment)
+            val vertexShader = context.resources.openRawResource(R.raw.live_detail_vertex).bufferedReader().use { it.readText() }
+            val fragmentShader = context.resources.openRawResource(R.raw.live_detail_fragment).bufferedReader().use { it.readText() }
+            glProgram = GlProgram(vertexShader, fragmentShader)
         } catch (e: IOException) {
             throw VideoFrameProcessingException(e)
         } catch (e: GlUtil.GlException) {
