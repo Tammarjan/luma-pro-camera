@@ -193,6 +193,11 @@ private fun LumaCameraScreen() {
     var videoMode by remember { mutableStateOf(false) }
     var isRecordingVideo by remember { mutableStateOf(false) }
     var recordingSeconds by remember { mutableIntStateOf(0) }
+    var hasAudioPermission by remember { mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) }
+    val audioPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        hasAudioPermission = granted
+        Toast.makeText(context, if (granted) "Microphone enabled for video" else "Video will be recorded without audio", Toast.LENGTH_SHORT).show()
+    }
     var camera by remember { mutableStateOf<Camera?>(null) }
     var isCapturing by remember { mutableStateOf(false) }
     var showCaptureFlash by remember { mutableStateOf(false) }
@@ -754,8 +759,12 @@ private fun LumaCameraScreen() {
                                 if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) put(MediaStore.Video.Media.RELATIVE_PATH, "Movies/Luma Pro Camera")
                             }
                             val output = MediaStoreOutputOptions.Builder(context.contentResolver, MediaStore.Video.Media.EXTERNAL_CONTENT_URI).setContentValues(values).build()
-                            runCatching {
-                                activeRecording = useCase.output.prepareRecording(context, output).start(ContextCompat.getMainExecutor(context)) { event ->
+                            if (!hasAudioPermission) {
+                                audioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                            } else runCatching {
+                                activeRecording = useCase.output.prepareRecording(context, output)
+                                    .withAudioEnabled()
+                                    .start(ContextCompat.getMainExecutor(context)) { event ->
                                     when (event) {
                                         is VideoRecordEvent.Start -> isRecordingVideo = true
                                         is VideoRecordEvent.Finalize -> {
