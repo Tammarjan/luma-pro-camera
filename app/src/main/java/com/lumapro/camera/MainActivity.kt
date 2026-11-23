@@ -202,6 +202,10 @@ private fun LumaCameraScreen() {
     var histogramEnabled by remember { mutableStateOf(false) }
     var liveHistogram by remember { mutableStateOf(List(32) { 0f }) }
     var highlightClipping by remember { mutableFloatStateOf(0f) }
+    var zebraEnabled by remember { mutableStateOf(false) }
+    var peakingEnabled by remember { mutableStateOf(false) }
+    var zebraPoints by remember { mutableStateOf<List<Offset>>(emptyList()) }
+    var peakingPoints by remember { mutableStateOf<List<Offset>>(emptyList()) }
     var levelEnabled by remember { mutableStateOf(false) }
     var focusLockEnabled by remember { mutableStateOf(false) }
     var rollDegrees by remember { mutableFloatStateOf(0f) }
@@ -299,8 +303,8 @@ private fun LumaCameraScreen() {
                 maximizeQuality = maximizeQuality,
                 rawCaptureEnabled = rawCaptureEnabled,
                 aspectRatioWide = aspectRatioWide,
-                analysisEnabled = histogramEnabled,
-                onHistogram = { bins, clipping -> liveHistogram = bins; highlightClipping = clipping },
+                analysisEnabled = histogramEnabled || zebraEnabled || peakingEnabled,
+                onAnalysis = { bins, clipping, zebras, peaks -> liveHistogram = bins; highlightClipping = clipping; zebraPoints = zebras; peakingPoints = peaks },
                 onCameraReady = { readyCamera, readyCapture ->
                     camera = readyCamera
                     imageCapture = readyCapture
@@ -381,6 +385,8 @@ private fun LumaCameraScreen() {
             )
             if (gridEnabled) RuleOfThirdsGrid(Modifier.fillMaxSize())
             if (histogramEnabled) LiveHistogramOverlay(liveHistogram, highlightClipping, Modifier.align(Alignment.BottomEnd).padding(end = 14.dp, bottom = 190.dp))
+            if (zebraEnabled) AnalysisPointOverlay(zebraPoints, Color(0xFFFFD740), Modifier.fillMaxSize())
+            if (peakingEnabled) AnalysisPointOverlay(peakingPoints, Color(0xFF00E676), Modifier.fillMaxSize())
             if (levelEnabled) {
                 Canvas(
                     modifier = Modifier.align(Alignment.Center).size(width = 150.dp, height = 36.dp)
@@ -649,6 +655,8 @@ private fun LumaCameraScreen() {
                 Button(onClick = { gridEnabled = !gridEnabled }) {
                     Text(if (gridEnabled) "Grid ON" else "Grid OFF")
                 }
+                Button(onClick = { zebraEnabled = !zebraEnabled }) { Text(if (zebraEnabled) "Zebra ON" else "Zebra") }
+                Button(onClick = { peakingEnabled = !peakingEnabled }) { Text(if (peakingEnabled) "Peaking ON" else "Peaking") }
                 Button(onClick = { histogramEnabled = !histogramEnabled }) {
                     Text(if (histogramEnabled) "Histogram ON" else "Histogram")
                 }
@@ -860,6 +868,14 @@ private fun LumaCameraScreen() {
                 )
             }
         }
+    }
+}
+
+
+@Composable
+private fun AnalysisPointOverlay(points: List<Offset>, color: Color, modifier: Modifier = Modifier) {
+    Canvas(modifier = modifier) {
+        points.forEach { point -> drawCircle(color.copy(alpha = 0.82f), 1.8.dp.toPx(), Offset(point.x * size.width, point.y * size.height)) }
     }
 }
 
@@ -1099,7 +1115,7 @@ private fun CameraPreview(
     rawCaptureEnabled: Boolean,
     aspectRatioWide: Boolean,
     analysisEnabled: Boolean,
-    onHistogram: (List<Float>, Float) -> Unit,
+    onAnalysis: (List<Float>, Float, List<Offset>, List<Offset>) -> Unit,
     onCameraReady: (Camera?, ImageCapture?) -> Unit,
     onTapFocus: () -> Unit,
     onRawCapabilityChanged: (Boolean) -> Unit
@@ -1180,6 +1196,8 @@ private fun CameraPreview(
                                 val bins = FloatArray(32)
                                 var sampled = 0
                                 var clipped = 0
+                                val zebraMarks = mutableListOf<Offset>()
+                                val focusMarks = mutableListOf<Offset>()
                                 val rowStride = plane.rowStride
                                 val pixelStride = plane.pixelStride
                                 var y = 0
@@ -1191,7 +1209,12 @@ private fun CameraPreview(
                                             val value = data[offset].toInt() and 0xFF
                                             bins[(value * 32 / 256).coerceIn(0, 31)] += 1f
                                             sampled++
-                                            if (value >= 250) clipped++
+                                            if (value >= 250) { clipped++; if (zebraMarks.size < 1200) zebraMarks.add(Offset(x.toFloat() / image.width, y.toFloat() / image.height)) }
+                                            if (x >= 4 && y >= 4 && focusMarks.size < 1800) {
+                                                val left = data[y * rowStride + (x - 4) * pixelStride].toInt() and 0xFF
+                                                val above = data[(y - 4) * rowStride + x * pixelStride].toInt() and 0xFF
+                                                if (kotlin.math.abs(value - left) + kotlin.math.abs(value - above) >= 90) focusMarks.add(Offset(x.toFloat() / image.width, y.toFloat() / image.height))
+                                            }
                                         }
                                         x += 4
                                     }
@@ -1200,9 +1223,11 @@ private fun CameraPreview(
                                 val peak = (bins.maxOrNull() ?: 1f).coerceAtLeast(1f)
                                 val normalized = bins.map { it / peak }
                                 val clipping = if (sampled > 0) clipped.toFloat() / sampled else 0f
-                                ContextCompat.getMainExecutor(context).execute {
-                                    onHistogram(normalized, clipping)
-                                }
+                                val rotation = image.imageInfo.rotationDegrees
+                                fun rotateMarks(marks: List<Offset>): List<Offset> = marks.map { p -> when (rotation) { 90 -> Offset(1f - p.y, p.x); 180 -> Offset(1f - p.x, 1f - p.y); 270 -> Offset(p.y, 1f - p.x); else -> p } }
+                                val rotatedZebras = rotateMarks(zebraMarks)
+                                val rotatedPeaks = rotateMarks(focusMarks)
+                                ContextCompat.getMainExecutor(context).execute { onAnalysis(normalized, clipping, rotatedZebras, rotatedPeaks) }
                             }
                         } catch (_: Exception) {
                         } finally {
@@ -1224,7 +1249,7 @@ private fun CameraPreview(
                     boundCamera = cameraProvider.bindToLifecycle(
                         lifecycleOwner, selector, preview, capture
                     )
-                    onHistogram(List(32) { 0f }, 0f)
+                    onAnalysis(List(32) { 0f }, 0f, emptyList(), emptyList())
                 }
                 onCameraReady(boundCamera, capture)
                 onRawCapabilityChanged(supportsRawJpeg)
