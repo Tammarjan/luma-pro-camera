@@ -10,6 +10,8 @@ import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
 import android.widget.Toast
+import androidx.heifwriter.HeifWriter
+import java.io.File
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -352,7 +354,7 @@ internal fun PhotoEditorDialog(photoUri: Uri, onDismiss: () -> Unit) {
                     onClick = {
                         val bitmap = edited ?: return@OutlinedButton
                         saving = true
-                        saveEditedPhoto(context, bitmap, Bitmap.CompressFormat.HEIC) { success ->
+                        saveEditedPhoto(context, bitmap, heif = true) { success ->
                             saving = false
                             Toast.makeText(
                                 context,
@@ -393,13 +395,12 @@ private fun EditorSlider(label: String, value: Float, range: ClosedFloatingPoint
 private fun saveEditedPhoto(
     context: Context,
     bitmap: Bitmap,
-    format: Bitmap.CompressFormat = Bitmap.CompressFormat.JPEG,
+    heif: Boolean = false,
     onComplete: (Boolean) -> Unit
 ) {
     Thread {
-        val isHeif = format == Bitmap.CompressFormat.HEIC
-        val extension = if (isHeif) ".heic" else ".jpg"
-        val mimeType = if (isHeif) "image/heic" else "image/jpeg"
+        val extension = if (heif) ".heic" else ".jpg"
+        val mimeType = if (heif) "image/heic" else "image/jpeg"
         val name = "Luma_Edit_" + SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date()) + extension
         val values = ContentValues().apply {
             put(MediaStore.Images.Media.DISPLAY_NAME, name)
@@ -410,23 +411,44 @@ private fun saveEditedPhoto(
             }
         }
         var outputUri: Uri? = null
+        var temporaryHeif: File? = null
         val success = runCatching {
+            if (heif) {
+                check(Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) { "HEIF export requires Android 11+" }
+                val temp = File.createTempFile("luma_edit_", ".heic", context.cacheDir)
+                temporaryHeif = temp
+                val writer = HeifWriter.Builder(temp.absolutePath, bitmap.width, bitmap.height, HeifWriter.INPUT_MODE_BITMAP)
+                    .setQuality(100).build()
+                try {
+                    writer.start()
+                    writer.addBitmap(bitmap)
+                    writer.stop(0)
+                } finally {
+                    writer.close()
+                }
+            }
             val uri = context.contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
                 ?: error("No output URI")
             outputUri = uri
             context.contentResolver.openOutputStream(uri)?.use { stream ->
-                val quality = if (isHeif) 100 else 96
-                if (!bitmap.compress(format, quality, stream)) error("Image encoder unavailable")
+                if (heif) {
+                    val temp = temporaryHeif ?: error("HEIF output missing")
+                    temp.inputStream().use { input -> input.copyTo(stream) }
+                } else {
+                    if (!bitmap.compress(Bitmap.CompressFormat.JPEG, 96, stream)) error("JPEG encoder unavailable")
+                }
                 stream.flush()
-            } ?: error("No output stream")
+            } ?: error("Could not open output stream")
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                val publish = ContentValues().apply { put(MediaStore.Images.Media.IS_PENDING, 0) }
-                if (context.contentResolver.update(uri, publish, null, null) <= 0) error("Could not publish JPEG")
+                val complete = ContentValues().apply { put(MediaStore.Images.Media.IS_PENDING, 0) }
+                context.contentResolver.update(uri, complete, null, null)
             }
             true
-        }.getOrDefault(false)
-        if (!success) outputUri?.let { uri -> runCatching { context.contentResolver.delete(uri, null, null) } }
-        android.os.Handler(android.os.Looper.getMainLooper()).post { onComplete(success) }
+        }.getOrElse {
+            outputUri?.let { context.contentResolver.delete(it, null, null) }
+            false
+        }
+        temporaryHeif?.delete()
+        onComplete(success)
     }.start()
 }
-
