@@ -226,16 +226,16 @@ private fun LumaCameraScreen() {
     var exposureMin by remember { mutableIntStateOf(0) }
     var exposureMax by remember { mutableIntStateOf(0) }
     var exposureIndex by remember { mutableIntStateOf(0) }
-    var liveBrightness by remember { mutableFloatStateOf(0f) }
-    var liveContrast by remember { mutableFloatStateOf(0f) }
-    var liveSaturation by remember { mutableFloatStateOf(0f) }
-    var liveWarmth by remember { mutableFloatStateOf(0f) }
+    var liveBrightness by remember { mutableFloatStateOf(0.025f) }
+    var liveContrast by remember { mutableFloatStateOf(0.06f) }
+    var liveSaturation by remember { mutableFloatStateOf(0.07f) }
+    var liveWarmth by remember { mutableFloatStateOf(0.015f) }
     var liveTint by remember { mutableFloatStateOf(0f) }
-    var liveDenoise by remember { mutableFloatStateOf(0f) }
-    var liveSharpening by remember { mutableFloatStateOf(0f) }
-    var liveClarity by remember { mutableFloatStateOf(0f) }
-    var liveTexture by remember { mutableFloatStateOf(0f) }
-    var selectedLiveLook by remember { mutableStateOf("NATURAL") }
+    var liveDenoise by remember { mutableFloatStateOf(0.16f) }
+    var liveSharpening by remember { mutableFloatStateOf(0.22f) }
+    var liveClarity by remember { mutableFloatStateOf(0.10f) }
+    var liveTexture by remember { mutableFloatStateOf(0.08f) }
+    var selectedLiveLook by remember { mutableStateOf("LUMA AUTO") }
     var zoomRatio by remember { mutableStateOf(1f) }
     var minZoomRatio by remember { mutableStateOf(1f) }
     var maxZoomRatio by remember { mutableStateOf(1f) }
@@ -640,19 +640,19 @@ private fun LumaCameraScreen() {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                             Text("LIVE LOOK • " + selectedLiveLook, color = Color.White, style = MaterialTheme.typography.labelSmall)
                             QuickCameraChip("RESET LOOK", true) {
-                                liveBrightness = 0f
-                                liveContrast = 0f
-                                liveSaturation = 0f
-                                liveWarmth = 0f
+                                liveBrightness = 0.025f
+                                liveContrast = 0.06f
+                                liveSaturation = 0.07f
+                                liveWarmth = 0.015f
                                 liveTint = 0f
-                                liveDenoise = 0f
-                                liveSharpening = 0f
-                                liveClarity = 0f
-                                liveTexture = 0f
-                                selectedLiveLook = "NATURAL"
+                                liveDenoise = 0.16f
+                                liveSharpening = 0.22f
+                                liveClarity = 0.10f
+                                liveTexture = 0.08f
+                                selectedLiveLook = "LUMA AUTO"
                             }
                         }
-                        Text("PHONE-INSPIRED CAMERA PROFILES", color = Color(0xFFFFD54F), style = MaterialTheme.typography.labelSmall)
+                        Text("LUMA AUTO DEFAULTS • balanced light, color, denoise and detail", color = Color(0xFFFFD54F), style = MaterialTheme.typography.labelSmall)
                         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             QuickCameraChip("PIXEL", true, selectedLiveLook == "PIXEL") {
                                 liveBrightness = 0.04f; liveContrast = 0.08f; liveSaturation = 0.08f; liveWarmth = -0.04f; liveTint = 0f
