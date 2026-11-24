@@ -39,6 +39,7 @@ import kotlin.math.roundToInt
 internal fun PhotoEditorDialog(photoUri: Uri, onDismiss: () -> Unit) {
     val context = LocalContext.current
     var source by remember(photoUri) { mutableStateOf<Bitmap?>(null) }
+    var editBase by remember(photoUri) { mutableStateOf<Bitmap?>(null) }
     var edited by remember(photoUri) { mutableStateOf<Bitmap?>(null) }
     var exposure by remember(photoUri) { mutableFloatStateOf(0f) }
     var contrast by remember(photoUri) { mutableFloatStateOf(1f) }
@@ -101,12 +102,13 @@ internal fun PhotoEditorDialog(photoUri: Uri, onDismiss: () -> Unit) {
             }
         }.getOrNull()
         source = loaded
+        editBase = loaded
         edited = loaded
         loadFailed = loaded == null
     }
 
-    LaunchedEffect(source, exposure, contrast, saturation, warmth, tint, vibrance, highlights, shadows, whites, blacks, clarity, texture, sharpening, noiseReduction, vignette) {
-        val original = source ?: return@LaunchedEffect
+    LaunchedEffect(editBase, exposure, contrast, saturation, warmth, tint, vibrance, highlights, shadows, whites, blacks, clarity, texture, sharpening, noiseReduction, vignette) {
+        val original = editBase ?: return@LaunchedEffect
         delay(100)
         processing = true
         val result = withContext(Dispatchers.Default) {
@@ -199,6 +201,7 @@ internal fun PhotoEditorDialog(photoUri: Uri, onDismiss: () -> Unit) {
                         Text(if (showOriginal) "Show Edited" else "Before / After")
                     }
                     OutlinedButton(onClick = {
+                        editBase = source
                         exposure = 0f
                         contrast = 1f
                         saturation = 1f
@@ -274,6 +277,7 @@ internal fun PhotoEditorDialog(photoUri: Uri, onDismiss: () -> Unit) {
                                                 android.os.Handler(android.os.Looper.getMainLooper()).post { aiProgress = value }
                                             }
                                         }
+                                        editBase = enhanced
                                         edited = enhanced
                                         showOriginal = false
                                         aiModelMessage = "AI enhancement complete · ${enhanced.width} × ${enhanced.height}"
