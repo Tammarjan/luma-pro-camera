@@ -10,8 +10,6 @@ import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
 import android.widget.Toast
-import androidx.heifwriter.HeifWriter
-import java.io.File
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -349,22 +347,6 @@ internal fun PhotoEditorDialog(photoUri: Uri, onDismiss: () -> Unit) {
         },
         confirmButton = {
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                OutlinedButton(
-                    enabled = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && edited != null && !processing && !saving && !aiEnhancing && !showOriginal,
-                    onClick = {
-                        val bitmap = edited ?: return@OutlinedButton
-                        saving = true
-                        saveEditedPhoto(context, bitmap, heif = true) { success ->
-                            saving = false
-                            Toast.makeText(
-                                context,
-                                if (success) "Edited HEIF saved" else "HEIF export unavailable on this device",
-                                Toast.LENGTH_SHORT
-                            ).show()
-                            if (success) onDismiss()
-                        }
-                    }
-                ) { Text("Save HEIF") }
                 Button(enabled = edited != null && !processing && !saving && !aiEnhancing && !showOriginal, onClick = {
                     val bitmap = edited ?: return@Button
                     saving = true
@@ -395,48 +377,25 @@ private fun EditorSlider(label: String, value: Float, range: ClosedFloatingPoint
 private fun saveEditedPhoto(
     context: Context,
     bitmap: Bitmap,
-    heif: Boolean = false,
     onComplete: (Boolean) -> Unit
 ) {
     Thread {
-        val extension = if (heif) ".heic" else ".jpg"
-        val mimeType = if (heif) "image/heic" else "image/jpeg"
-        val name = "Luma_Edit_" + SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date()) + extension
+        val name = "Luma_Edit_" + SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date()) + ".jpg"
         val values = ContentValues().apply {
             put(MediaStore.Images.Media.DISPLAY_NAME, name)
-            put(MediaStore.Images.Media.MIME_TYPE, mimeType)
+            put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/Luma Pro Camera")
                 put(MediaStore.Images.Media.IS_PENDING, 1)
             }
         }
         var outputUri: Uri? = null
-        var temporaryHeif: File? = null
         val success = runCatching {
-            if (heif) {
-                check(Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) { "HEIF export requires Android 11+" }
-                val temp = File.createTempFile("luma_edit_", ".heic", context.cacheDir)
-                temporaryHeif = temp
-                val writer = HeifWriter.Builder(temp.absolutePath, bitmap.width, bitmap.height, HeifWriter.INPUT_MODE_BITMAP)
-                    .setQuality(100).build()
-                try {
-                    writer.start()
-                    writer.addBitmap(bitmap)
-                    writer.stop(0)
-                } finally {
-                    writer.close()
-                }
-            }
             val uri = context.contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
                 ?: error("No output URI")
             outputUri = uri
             context.contentResolver.openOutputStream(uri)?.use { stream ->
-                if (heif) {
-                    val temp = temporaryHeif ?: error("HEIF output missing")
-                    temp.inputStream().use { input -> input.copyTo(stream) }
-                } else {
-                    if (!bitmap.compress(Bitmap.CompressFormat.JPEG, 96, stream)) error("JPEG encoder unavailable")
-                }
+                if (!bitmap.compress(Bitmap.CompressFormat.JPEG, 96, stream)) error("JPEG encoder unavailable")
                 stream.flush()
             } ?: error("Could not open output stream")
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -448,7 +407,6 @@ private fun saveEditedPhoto(
             outputUri?.let { context.contentResolver.delete(it, null, null) }
             false
         }
-        temporaryHeif?.delete()
         onComplete(success)
     }.start()
 }
