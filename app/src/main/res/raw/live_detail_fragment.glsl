@@ -7,38 +7,55 @@ uniform float uSharpen;
 uniform float uClarity;
 uniform float uTexture;
 varying vec2 vTexSamplingCoord;
-float luma(vec3 c) { return dot(c, vec3(0.299, 0.587, 0.114)); }
+
+float luma(vec3 c) {
+  return dot(c, vec3(0.299, 0.587, 0.114));
+}
+
 void main() {
   vec2 uv = vTexSamplingCoord;
   vec3 center = texture2D(uTexSampler, uv).rgb;
-  vec3 n1 = texture2D(uTexSampler, uv + vec2(uTexelSize.x, 0.0)).rgb;
-  vec3 n2 = texture2D(uTexSampler, uv - vec2(uTexelSize.x, 0.0)).rgb;
-  vec3 n3 = texture2D(uTexSampler, uv + vec2(0.0, uTexelSize.y)).rgb;
-  vec3 n4 = texture2D(uTexSampler, uv - vec2(0.0, uTexelSize.y)).rgb;
-  vec3 n5 = texture2D(uTexSampler, uv + uTexelSize).rgb;
-  vec3 n6 = texture2D(uTexSampler, uv - uTexelSize).rgb;
-  vec3 n7 = texture2D(uTexSampler, uv + vec2(uTexelSize.x, -uTexelSize.y)).rgb;
-  vec3 n8 = texture2D(uTexSampler, uv + vec2(-uTexelSize.x, uTexelSize.y)).rgb;
-  float lc = luma(center);
-  vec3 sum = center;
-  float total = 1.0;
-  vec3 neighbors[8];
-  neighbors[0]=n1; neighbors[1]=n2; neighbors[2]=n3; neighbors[3]=n4;
-  neighbors[4]=n5; neighbors[5]=n6; neighbors[6]=n7; neighbors[7]=n8;
-  for (int i=0; i<8; i++) {
-    float diff = abs(luma(neighbors[i]) - lc);
-    float w = exp(-diff * 18.0);
-    sum += neighbors[i] * w;
-    total += w;
-  }
-  vec3 smoothColor = sum / total;
-  vec3 denoised = mix(center, smoothColor, uDenoise * 0.72);
-  vec3 average = (n1+n2+n3+n4) * 0.25;
-  vec3 detail = center - average;
-  float midtone = 1.0 - smoothstep(0.15, 0.85, lc);
+
+  vec3 left = texture2D(uTexSampler, uv - vec2(uTexelSize.x, 0.0)).rgb;
+  vec3 right = texture2D(uTexSampler, uv + vec2(uTexelSize.x, 0.0)).rgb;
+  vec3 up = texture2D(uTexSampler, uv - vec2(0.0, uTexelSize.y)).rgb;
+  vec3 down = texture2D(uTexSampler, uv + vec2(0.0, uTexelSize.y)).rgb;
+
+  vec3 diagonalA = texture2D(uTexSampler, uv + uTexelSize).rgb;
+  vec3 diagonalB = texture2D(uTexSampler, uv - uTexelSize).rgb;
+  vec3 diagonalC = texture2D(uTexSampler, uv + vec2(uTexelSize.x, -uTexelSize.y)).rgb;
+  vec3 diagonalD = texture2D(uTexSampler, uv + vec2(-uTexelSize.x, uTexelSize.y)).rgb;
+
+  float centerLuma = luma(center);
+  float wL = exp(-abs(luma(left) - centerLuma) * 18.0);
+  float wR = exp(-abs(luma(right) - centerLuma) * 18.0);
+  float wU = exp(-abs(luma(up) - centerLuma) * 18.0);
+  float wD = exp(-abs(luma(down) - centerLuma) * 18.0);
+  float wA = exp(-abs(luma(diagonalA) - centerLuma) * 18.0);
+  float wB = exp(-abs(luma(diagonalB) - centerLuma) * 18.0);
+  float wC = exp(-abs(luma(diagonalC) - centerLuma) * 18.0);
+  float wDg = exp(-abs(luma(diagonalD) - centerLuma) * 18.0);
+
+  vec3 weighted = center + left*wL + right*wR + up*wU + down*wD
+      + diagonalA*wA + diagonalB*wB + diagonalC*wC + diagonalD*wDg;
+  float weightSum = 1.0 + wL + wR + wU + wD + wA + wB + wC + wDg;
+  vec3 denoised = mix(center, weighted / weightSum, clamp(uDenoise, 0.0, 1.0) * 0.72);
+
+  vec3 nearAverage = (left + right + up + down) * 0.25;
+  vec3 detail = center - nearAverage;
+  vec2 farStep = uTexelSize * 3.0;
+  vec3 farAverage = (
+      texture2D(uTexSampler, uv + vec2(farStep.x, 0.0)).rgb +
+      texture2D(uTexSampler, uv - vec2(farStep.x, 0.0)).rgb +
+      texture2D(uTexSampler, uv + vec2(0.0, farStep.y)).rgb +
+      texture2D(uTexSampler, uv - vec2(0.0, farStep.y)).rgb
+  ) * 0.25;
+  vec3 textureDetail = center - farAverage;
+  float midtone = 1.0 - smoothstep(0.15, 0.85, centerLuma);
+
   vec3 result = denoised;
-  result += detail * uSharpen * 1.35;
-  result += detail * uClarity * midtone * 1.15;
-  result += detail * uTexture * 0.75;
+  result += detail * clamp(uSharpen, 0.0, 1.0) * 1.35;
+  result += detail * clamp(uClarity, 0.0, 1.0) * midtone * 1.15;
+  result += textureDetail * clamp(uTexture, 0.0, 1.0) * 0.9;
   gl_FragColor = vec4(clamp(result, 0.0, 1.0), 1.0);
 }
