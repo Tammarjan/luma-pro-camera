@@ -347,6 +347,22 @@ internal fun PhotoEditorDialog(photoUri: Uri, onDismiss: () -> Unit) {
         },
         confirmButton = {
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                OutlinedButton(
+                    enabled = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && edited != null && !processing && !saving && !aiEnhancing && !showOriginal,
+                    onClick = {
+                        val bitmap = edited ?: return@OutlinedButton
+                        saving = true
+                        saveEditedPhoto(context, bitmap, Bitmap.CompressFormat.HEIC) { success ->
+                            saving = false
+                            Toast.makeText(
+                                context,
+                                if (success) "Edited HEIF saved" else "HEIF export unavailable on this device",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                            if (success) onDismiss()
+                        }
+                    }
+                ) { Text("Save HEIF") }
                 Button(enabled = edited != null && !processing && !saving && !aiEnhancing && !showOriginal, onClick = {
                     val bitmap = edited ?: return@Button
                     saving = true
@@ -356,7 +372,6 @@ internal fun PhotoEditorDialog(photoUri: Uri, onDismiss: () -> Unit) {
                         if (success) onDismiss()
                     }
                 }) { Text(if (saving) "Saving…" else "Save JPEG") }
-
             }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Close", color = Color.White) } }
@@ -375,12 +390,20 @@ private fun EditorSlider(label: String, value: Float, range: ClosedFloatingPoint
 }
 
 
-private fun saveEditedPhoto(context: Context, bitmap: Bitmap, onComplete: (Boolean) -> Unit) {
+private fun saveEditedPhoto(
+    context: Context,
+    bitmap: Bitmap,
+    format: Bitmap.CompressFormat = Bitmap.CompressFormat.JPEG,
+    onComplete: (Boolean) -> Unit
+) {
     Thread {
-        val name = "Luma_Edit_" + SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date()) + ".jpg"
+        val isHeif = format == Bitmap.CompressFormat.HEIC
+        val extension = if (isHeif) ".heic" else ".jpg"
+        val mimeType = if (isHeif) "image/heic" else "image/jpeg"
+        val name = "Luma_Edit_" + SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date()) + extension
         val values = ContentValues().apply {
             put(MediaStore.Images.Media.DISPLAY_NAME, name)
-            put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
+            put(MediaStore.Images.Media.MIME_TYPE, mimeType)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/Luma Pro Camera")
                 put(MediaStore.Images.Media.IS_PENDING, 1)
@@ -392,7 +415,8 @@ private fun saveEditedPhoto(context: Context, bitmap: Bitmap, onComplete: (Boole
                 ?: error("No output URI")
             outputUri = uri
             context.contentResolver.openOutputStream(uri)?.use { stream ->
-                if (!bitmap.compress(Bitmap.CompressFormat.JPEG, 96, stream)) error("JPEG encode failed")
+                val quality = if (isHeif) 100 else 96
+                if (!bitmap.compress(format, quality, stream)) error("Image encoder unavailable")
                 stream.flush()
             } ?: error("No output stream")
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
