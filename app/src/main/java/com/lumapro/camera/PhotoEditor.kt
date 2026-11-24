@@ -28,7 +28,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
-import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -266,17 +265,7 @@ internal fun PhotoEditorDialog(photoUri: Uri, onDismiss: () -> Unit) {
                         if (success) onDismiss()
                     }
                 }) { Text(if (saving) "Saving…" else "Save JPEG") }
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                    OutlinedButton(enabled = edited != null && !processing && !saving && !showOriginal, onClick = {
-                        val bitmap = edited ?: return@OutlinedButton
-                        saving = true
-                        saveEditedHeifPhoto(context, bitmap) { success ->
-                            saving = false
-                            Toast.makeText(context, if (success) "Edited HEIF saved" else "HEIF export failed", Toast.LENGTH_SHORT).show()
-                            if (success) onDismiss()
-                        }
-                    }) { Text("Save HEIF") }
-                }
+
             }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Close", color = Color.White) } }
@@ -294,54 +283,6 @@ private fun EditorSlider(label: String, value: Float, range: ClosedFloatingPoint
     }
 }
 
-
-@androidx.annotation.RequiresApi(Build.VERSION_CODES.P)
-private fun saveEditedHeifPhoto(context: Context, bitmap: Bitmap, onComplete: (Boolean) -> Unit) {
-    Thread {
-        val name = "Luma_Edit_" + SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date()) + ".heic"
-        val temporary = File(context.cacheDir, "luma-heif-${System.nanoTime()}.heic")
-        var outputUri: Uri? = null
-        val success = runCatching {
-            val writer = androidx.heifwriter.HeifWriter.Builder(
-                temporary.absolutePath,
-                bitmap.width,
-                bitmap.height,
-                androidx.heifwriter.HeifWriter.INPUT_MODE_BITMAP
-            ).setQuality(95).build()
-            try {
-                writer.start()
-                writer.addBitmap(bitmap)
-                writer.stop(0)
-            } finally {
-                writer.close()
-            }
-            check(temporary.isFile && temporary.length() > 0L) { "HEIF encoder produced no output" }
-            val values = ContentValues().apply {
-                put(MediaStore.Images.Media.DISPLAY_NAME, name)
-                put(MediaStore.Images.Media.MIME_TYPE, "image/heic")
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/Luma Pro Camera")
-                    put(MediaStore.Images.Media.IS_PENDING, 1)
-                }
-            }
-            val uri = context.contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
-                ?: error("No output URI")
-            outputUri = uri
-            context.contentResolver.openOutputStream(uri)?.use { output ->
-                temporary.inputStream().use { input -> input.copyTo(output) }
-                output.flush()
-            } ?: error("No output stream")
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                val publish = ContentValues().apply { put(MediaStore.Images.Media.IS_PENDING, 0) }
-                if (context.contentResolver.update(uri, publish, null, null) <= 0) error("Could not publish HEIF")
-            }
-            true
-        }.getOrDefault(false)
-        if (!success) outputUri?.let { uri -> runCatching { context.contentResolver.delete(uri, null, null) } }
-        runCatching { temporary.delete() }
-        android.os.Handler(android.os.Looper.getMainLooper()).post { onComplete(success) }
-    }.start()
-}
 
 private fun saveEditedPhoto(context: Context, bitmap: Bitmap, onComplete: (Boolean) -> Unit) {
     Thread {
