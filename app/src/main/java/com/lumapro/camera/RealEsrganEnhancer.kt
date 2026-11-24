@@ -6,6 +6,8 @@ import android.graphics.Color
 import ai.onnxruntime.OnnxTensor
 import ai.onnxruntime.OrtEnvironment
 import ai.onnxruntime.OrtSession
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import java.nio.FloatBuffer
 import kotlin.math.roundToInt
 
@@ -89,9 +91,14 @@ internal object RealEsrganEnhancer {
                                     inputData[2 * pixelCount + i] = Color.blue(pixel) / 255f
                                 }
 
+                                val inputBuffer = ByteBuffer.allocateDirect(inputData.size * 4)
+                                    .order(ByteOrder.nativeOrder())
+                                    .asFloatBuffer()
+                                inputBuffer.put(inputData)
+                                inputBuffer.rewind()
                                 val tensor = OnnxTensor.createTensor(
                                     env,
-                                    FloatBuffer.wrap(inputData),
+                                    inputBuffer,
                                     longArrayOf(1, 3, inputHeight.toLong(), inputWidth.toLong())
                                 )
                                 tensor.use { inputTensor ->
@@ -107,7 +114,7 @@ internal object RealEsrganEnhancer {
                                         check(outputWidth == inputWidth * SCALE && outputHeight == inputHeight * SCALE) {
                                             "AI model did not return the expected 4x output"
                                         }
-                                        val output = outputTensor.floatBuffer
+                                        val output = outputTensor.floatBuffer ?: error("AI model output is not float32")
                                         val planeSize = outputWidth * outputHeight
                                         val cropLeft = (tileX - inputLeft) * SCALE
                                         val cropTop = (tileY - inputTop) * SCALE
