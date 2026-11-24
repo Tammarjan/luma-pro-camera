@@ -226,15 +226,15 @@ private fun LumaCameraScreen() {
     var exposureMin by remember { mutableIntStateOf(0) }
     var exposureMax by remember { mutableIntStateOf(0) }
     var exposureIndex by remember { mutableIntStateOf(0) }
-    var liveBrightness by remember { mutableFloatStateOf(0.025f) }
-    var liveContrast by remember { mutableFloatStateOf(0.06f) }
-    var liveSaturation by remember { mutableFloatStateOf(0.07f) }
-    var liveWarmth by remember { mutableFloatStateOf(0.015f) }
+    var liveBrightness by remember { mutableFloatStateOf(0.02f) }
+    var liveContrast by remember { mutableFloatStateOf(0.05f) }
+    var liveSaturation by remember { mutableFloatStateOf(0.06f) }
+    var liveWarmth by remember { mutableFloatStateOf(0.01f) }
     var liveTint by remember { mutableFloatStateOf(0f) }
-    var liveDenoise by remember { mutableFloatStateOf(0.16f) }
-    var liveSharpening by remember { mutableFloatStateOf(0.22f) }
-    var liveClarity by remember { mutableFloatStateOf(0.10f) }
-    var liveTexture by remember { mutableFloatStateOf(0.08f) }
+    var liveDenoise by remember { mutableFloatStateOf(0.10f) }
+    var liveSharpening by remember { mutableFloatStateOf(0.17f) }
+    var liveClarity by remember { mutableFloatStateOf(0.07f) }
+    var liveTexture by remember { mutableFloatStateOf(0.07f) }
     var selectedLiveLook by remember { mutableStateOf("LUMA AUTO") }
     var zoomRatio by remember { mutableStateOf(1f) }
     var minZoomRatio by remember { mutableStateOf(1f) }
@@ -640,15 +640,15 @@ private fun LumaCameraScreen() {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                             Text("LIVE LOOK • " + selectedLiveLook, color = Color.White, style = MaterialTheme.typography.labelSmall)
                             QuickCameraChip("RESET LOOK", true) {
-                                liveBrightness = 0.025f
-                                liveContrast = 0.06f
-                                liveSaturation = 0.07f
-                                liveWarmth = 0.015f
+                                liveBrightness = 0.02f
+                                liveContrast = 0.05f
+                                liveSaturation = 0.06f
+                                liveWarmth = 0.01f
                                 liveTint = 0f
-                                liveDenoise = 0.16f
-                                liveSharpening = 0.22f
-                                liveClarity = 0.10f
-                                liveTexture = 0.08f
+                                liveDenoise = 0.10f
+                                liveSharpening = 0.17f
+                                liveClarity = 0.07f
+                                liveTexture = 0.07f
                                 selectedLiveLook = "LUMA AUTO"
                             }
                         }

@@ -41,25 +41,25 @@ internal fun PhotoEditorDialog(photoUri: Uri, onDismiss: () -> Unit) {
     var source by remember(photoUri) { mutableStateOf<Bitmap?>(null) }
     var editBase by remember(photoUri) { mutableStateOf<Bitmap?>(null) }
     var edited by remember(photoUri) { mutableStateOf<Bitmap?>(null) }
-    var exposure by remember(photoUri) { mutableFloatStateOf(0f) }
-    var contrast by remember(photoUri) { mutableFloatStateOf(1f) }
-    var saturation by remember(photoUri) { mutableFloatStateOf(1f) }
-    var warmth by remember(photoUri) { mutableFloatStateOf(0f) }
+    var exposure by remember(photoUri) { mutableFloatStateOf(0.08f) }
+    var contrast by remember(photoUri) { mutableFloatStateOf(1.06f) }
+    var saturation by remember(photoUri) { mutableFloatStateOf(1.05f) }
+    var warmth by remember(photoUri) { mutableFloatStateOf(0.02f) }
     var tint by remember(photoUri) { mutableFloatStateOf(0f) }
-    var vibrance by remember(photoUri) { mutableFloatStateOf(0f) }
-    var highlights by remember(photoUri) { mutableFloatStateOf(0f) }
-    var shadows by remember(photoUri) { mutableFloatStateOf(0f) }
-    var whites by remember(photoUri) { mutableFloatStateOf(0f) }
-    var blacks by remember(photoUri) { mutableFloatStateOf(0f) }
-    var clarity by remember(photoUri) { mutableFloatStateOf(0f) }
-    var texture by remember(photoUri) { mutableFloatStateOf(0f) }
-    var sharpening by remember(photoUri) { mutableFloatStateOf(0f) }
-    var noiseReduction by remember(photoUri) { mutableFloatStateOf(0f) }
+    var vibrance by remember(photoUri) { mutableFloatStateOf(0.10f) }
+    var highlights by remember(photoUri) { mutableFloatStateOf(0.12f) }
+    var shadows by remember(photoUri) { mutableFloatStateOf(0.12f) }
+    var whites by remember(photoUri) { mutableFloatStateOf(0.02f) }
+    var blacks by remember(photoUri) { mutableFloatStateOf(-0.03f) }
+    var clarity by remember(photoUri) { mutableFloatStateOf(0.07f) }
+    var texture by remember(photoUri) { mutableFloatStateOf(0.10f) }
+    var sharpening by remember(photoUri) { mutableFloatStateOf(0.14f) }
+    var noiseReduction by remember(photoUri) { mutableFloatStateOf(0.10f) }
     var vignette by remember(photoUri) { mutableFloatStateOf(0f) }
     var processing by remember(photoUri) { mutableStateOf(false) }
     var saving by remember(photoUri) { mutableStateOf(false) }
     var showOriginal by remember(photoUri) { mutableStateOf(false) }
-    var selectedEditorLook by remember(photoUri) { mutableStateOf("Natural") }
+    var selectedEditorLook by remember(photoUri) { mutableStateOf("Luma Auto") }
     var editorSection by remember(photoUri) { mutableStateOf(0) }
     var loadFailed by remember(photoUri) { mutableStateOf(false) }
     var aiModelReady by remember(photoUri) { mutableStateOf(false) }
@@ -227,22 +227,22 @@ internal fun PhotoEditorDialog(photoUri: Uri, onDismiss: () -> Unit) {
                     }
                     OutlinedButton(onClick = {
                         editBase = source
-                        exposure = 0f
-                        contrast = 1f
-                        saturation = 1f
-                        warmth = 0f
+                        exposure = 0.08f
+                        contrast = 1.06f
+                        saturation = 1.05f
+                        warmth = 0.02f
                         tint = 0f
-                        vibrance = 0f
-                        highlights = 0f
-                        shadows = 0f
-                        whites = 0f
-                        blacks = 0f
-                        clarity = 0f
-                        texture = 0f
-                        sharpening = 0f
-                        noiseReduction = 0f
+                        vibrance = 0.10f
+                        highlights = 0.12f
+                        shadows = 0.12f
+                        whites = 0.02f
+                        blacks = -0.03f
+                        clarity = 0.07f
+                        texture = 0.10f
+                        sharpening = 0.14f
+                        noiseReduction = 0.10f
                         vignette = 0f
-                        selectedEditorLook = "Natural"
+                        selectedEditorLook = "Luma Auto"
                         showOriginal = false
                     }, modifier = Modifier.weight(1f)) { Text("Reset") }
                 }
@@ -331,7 +331,13 @@ internal fun PhotoEditorDialog(photoUri: Uri, onDismiss: () -> Unit) {
                     }
                 }
                 Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    FilterChip(selected = selectedEditorLook == "Natural", onClick = { selectedEditorLook = "Natural"; exposure = 0f; contrast = 1f; saturation = 1f; warmth = 0f; tint = 0f; vibrance = 0f }, label = { Text("Natural") })
+                    FilterChip(selected = selectedEditorLook == "Luma Auto", onClick = {
+                        selectedEditorLook = "Luma Auto"
+                        exposure = 0.08f; contrast = 1.06f; saturation = 1.05f; warmth = 0.02f; tint = 0f
+                        vibrance = 0.10f; highlights = 0.12f; shadows = 0.12f; whites = 0.02f; blacks = -0.03f
+                        clarity = 0.07f; texture = 0.10f; sharpening = 0.14f; noiseReduction = 0.10f; vignette = 0f
+                    }, label = { Text("Luma Auto") })
+                    FilterChip(selected = selectedEditorLook == "Natural", onClick = { selectedEditorLook = "Natural"; exposure = 0f; contrast = 1f; saturation = 1f; warmth = 0f; tint = 0f; vibrance = 0f; highlights = 0f; shadows = 0f; whites = 0f; blacks = 0f; clarity = 0f; texture = 0f; sharpening = 0f; noiseReduction = 0f; vignette = 0f }, label = { Text("Natural") })
                     FilterChip(selected = selectedEditorLook == "Vivid", onClick = { selectedEditorLook = "Vivid"; exposure = 0f; contrast = 1.12f; saturation = 1.28f; warmth = 0f; tint = 0f; vibrance = 0.2f }, label = { Text("Vivid") })
                     FilterChip(selected = selectedEditorLook == "Warm", onClick = { selectedEditorLook = "Warm"; exposure = 0f; contrast = 1.05f; saturation = 1.08f; warmth = 0.4f; tint = 0.03f; vibrance = 0.05f }, label = { Text("Warm") })
                     FilterChip(selected = selectedEditorLook == "Cool", onClick = { selectedEditorLook = "Cool"; exposure = 0f; contrast = 1.05f; saturation = 1.08f; warmth = -0.4f; tint = 0f; vibrance = 0.05f }, label = { Text("Cool") })
