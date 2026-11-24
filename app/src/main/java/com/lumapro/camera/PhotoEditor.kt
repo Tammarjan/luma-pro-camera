@@ -302,11 +302,11 @@ private fun saveEditedHeifPhoto(context: Context, bitmap: Bitmap, onComplete: (B
         val temporary = File(context.cacheDir, "luma-heif-${System.nanoTime()}.heic")
         var outputUri: Uri? = null
         val success = runCatching {
-            val writer = android.media.HeifWriter.Builder(
+            val writer = androidx.heifwriter.HeifWriter.Builder(
                 temporary.absolutePath,
                 bitmap.width,
                 bitmap.height,
-                android.media.HeifWriter.INPUT_MODE_BITMAP
+                androidx.heifwriter.HeifWriter.INPUT_MODE_BITMAP
             ).setQuality(95).build()
             try {
                 writer.start()
