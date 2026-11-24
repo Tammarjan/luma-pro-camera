@@ -638,7 +638,7 @@ private fun LumaCameraScreen() {
                 when (cameraPanelTab) {
                     0 -> {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                            Text("LIVE LOOK", color = Color.White, style = MaterialTheme.typography.labelSmall)
+                            Text("LIVE LOOK • " + selectedLiveLook, color = Color.White, style = MaterialTheme.typography.labelSmall)
                             QuickCameraChip("RESET LOOK", true) {
                                 liveBrightness = 0f
                                 liveContrast = 0f
@@ -652,12 +652,30 @@ private fun LumaCameraScreen() {
                                 selectedLiveLook = "NATURAL"
                             }
                         }
+                        Text("PHONE-INSPIRED CAMERA PROFILES", color = Color(0xFFFFD54F), style = MaterialTheme.typography.labelSmall)
                         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            QuickCameraChip("NATURAL", true, selectedLiveLook == "NATURAL") { liveBrightness = 0f; liveContrast = 0f; liveSaturation = 0f; liveWarmth = 0f; liveTint = 0f; selectedLiveLook = "NATURAL" }
-                            QuickCameraChip("VIVID", true, selectedLiveLook == "VIVID") { liveBrightness = 0f; liveContrast = 0.12f; liveSaturation = 0.35f; liveWarmth = 0f; liveTint = 0f; selectedLiveLook = "VIVID" }
-                            QuickCameraChip("WARM", true, selectedLiveLook == "WARM") { liveBrightness = 0f; liveContrast = 0.05f; liveSaturation = 0.08f; liveWarmth = 0.4f; liveTint = 0.03f; selectedLiveLook = "WARM" }
-                            QuickCameraChip("COOL", true, selectedLiveLook == "COOL") { liveBrightness = 0f; liveContrast = 0.05f; liveSaturation = 0.08f; liveWarmth = -0.4f; liveTint = 0f; selectedLiveLook = "COOL" }
+                            QuickCameraChip("PIXEL", true, selectedLiveLook == "PIXEL") {
+                                liveBrightness = 0.04f; liveContrast = 0.08f; liveSaturation = 0.08f; liveWarmth = -0.04f; liveTint = 0f
+                                liveDenoise = 0.28f; liveSharpening = 0.32f; liveClarity = 0.18f; liveTexture = 0.14f; selectedLiveLook = "PIXEL"
+                            }
+                            QuickCameraChip("IPHONE PRO", true, selectedLiveLook == "IPHONE") {
+                                liveBrightness = 0.02f; liveContrast = 0.04f; liveSaturation = -0.02f; liveWarmth = 0.02f; liveTint = 0.01f
+                                liveDenoise = 0.16f; liveSharpening = 0.24f; liveClarity = 0.12f; liveTexture = 0.10f; selectedLiveLook = "IPHONE"
+                            }
+                            QuickCameraChip("SAMSUNG ULTRA", true, selectedLiveLook == "SAMSUNG") {
+                                liveBrightness = 0.03f; liveContrast = 0.15f; liveSaturation = 0.24f; liveWarmth = 0.04f; liveTint = 0f
+                                liveDenoise = 0.18f; liveSharpening = 0.42f; liveClarity = 0.20f; liveTexture = 0.18f; selectedLiveLook = "SAMSUNG"
+                            }
+                            QuickCameraChip("XIAOMI LEICA", true, selectedLiveLook == "XIAOMI") {
+                                liveBrightness = -0.01f; liveContrast = 0.20f; liveSaturation = 0.12f; liveWarmth = 0.10f; liveTint = 0.02f
+                                liveDenoise = 0.12f; liveSharpening = 0.38f; liveClarity = 0.25f; liveTexture = 0.22f; selectedLiveLook = "XIAOMI"
+                            }
+                            QuickCameraChip("NATURAL", true, selectedLiveLook == "NATURAL") {
+                                liveBrightness = 0f; liveContrast = 0f; liveSaturation = 0f; liveWarmth = 0f; liveTint = 0f
+                                liveDenoise = 0f; liveSharpening = 0f; liveClarity = 0f; liveTexture = 0f; selectedLiveLook = "NATURAL"
+                            }
                         }
+                        Text("Styles are Luma approximations, not the phones' original camera software. Applied to live preview and JPEG capture; RAW stays unprocessed.", color = Color.LightGray, style = MaterialTheme.typography.labelSmall)
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                             Text("EXPOSURE COMPENSATION", color = Color.White, style = MaterialTheme.typography.labelSmall)
                             Text("EV ${if (exposureIndex > 0) "+" else ""}${exposureIndex}", color = Color(0xFFFFD54F), style = MaterialTheme.typography.labelSmall)
