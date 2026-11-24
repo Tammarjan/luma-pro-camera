@@ -277,6 +277,8 @@ internal fun PhotoEditorDialog(photoUri: Uri, onDismiss: () -> Unit) {
                                         edited = enhanced
                                         showOriginal = false
                                         aiModelMessage = "AI enhancement complete · ${enhanced.width} × ${enhanced.height}"
+                                    } catch (error: OutOfMemoryError) {
+                                        aiModelMessage = "Not enough free memory for AI enhancement. Close other apps and try a smaller photo."
                                     } catch (error: Exception) {
                                         aiModelMessage = error.message?.take(140) ?: "AI enhancement failed"
                                     } finally {
