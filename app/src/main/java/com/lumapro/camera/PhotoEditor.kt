@@ -63,6 +63,7 @@ internal fun PhotoEditorDialog(photoUri: Uri, onDismiss: () -> Unit) {
     var loadFailed by remember(photoUri) { mutableStateOf(false) }
     var aiModelReady by remember(photoUri) { mutableStateOf(false) }
     var aiDownloading by remember(photoUri) { mutableStateOf(false) }
+    var aiEnhancing by remember(photoUri) { mutableStateOf(false) }
     var aiProgress by remember(photoUri) { mutableIntStateOf(0) }
     var aiModelMessage by remember(photoUri) { mutableStateOf("AI model not installed") }
     val editorScope = rememberCoroutineScope()
@@ -227,12 +228,12 @@ internal fun PhotoEditorDialog(photoUri: Uri, onDismiss: () -> Unit) {
                             Text(if (aiModelReady) "VERIFIED" else "NOT INSTALLED", color = if (aiModelReady) Color(0xFF80CBC4) else Color(0xFFFFCC80), style = MaterialTheme.typography.labelSmall)
                         }
                         Text(aiModelMessage, color = Color.LightGray, style = MaterialTheme.typography.bodySmall)
-                        if (aiDownloading) {
+                        if (aiDownloading || aiEnhancing) {
                             LinearProgressIndicator(progress = { aiProgress / 100f }, modifier = Modifier.fillMaxWidth())
-                            Text("$aiProgress%", color = Color.LightGray, style = MaterialTheme.typography.labelSmall)
+                            Text(if (aiEnhancing) "Enhancing photo…" else "$aiProgress%", color = Color.LightGray, style = MaterialTheme.typography.labelSmall)
                         }
                         Button(
-                            enabled = !aiDownloading,
+                            enabled = !aiDownloading && !aiEnhancing,
                             onClick = {
                                 editorScope.launch {
                                     aiDownloading = true
@@ -258,6 +259,36 @@ internal fun PhotoEditorDialog(photoUri: Uri, onDismiss: () -> Unit) {
                         ) {
                             Text(if (aiDownloading) "Installing AI Model…" else if (aiModelReady) "Verify / Reinstall AI Model" else "Download AI Model")
                         }
+                        OutlinedButton(
+                            enabled = aiModelReady && !aiDownloading && !aiEnhancing && !processing && (edited != null || source != null),
+                            onClick = {
+                                val inputBitmap = if (showOriginal) source else (edited ?: source)
+                                if (inputBitmap == null) return@OutlinedButton
+                                editorScope.launch {
+                                    aiEnhancing = true
+                                    aiProgress = 0
+                                    aiModelMessage = "Running Real-ESRGAN 4× enhancement on this device…"
+                                    try {
+                                        val enhanced = withContext(Dispatchers.Default) {
+                                            RealEsrganEnhancer.enhance(context, inputBitmap) { value ->
+                                                android.os.Handler(android.os.Looper.getMainLooper()).post { aiProgress = value }
+                                            }
+                                        }
+                                        edited = enhanced
+                                        showOriginal = false
+                                        aiModelMessage = "AI enhancement complete · ${enhanced.width} × ${enhanced.height}"
+                                    } catch (error: Exception) {
+                                        aiModelMessage = error.message?.take(140) ?: "AI enhancement failed"
+                                    } finally {
+                                        aiEnhancing = false
+                                    }
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(if (aiEnhancing) "AI Enhancing…" else "Enhance Photo · 4×")
+                        }
+                        Text("Processes a maximum 768 px input edge to limit phone memory use.", color = Color.LightGray, style = MaterialTheme.typography.labelSmall)
                     }
                 }
                 if (preview != null) {
@@ -310,7 +341,7 @@ internal fun PhotoEditorDialog(photoUri: Uri, onDismiss: () -> Unit) {
         },
         confirmButton = {
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Button(enabled = edited != null && !processing && !saving && !showOriginal, onClick = {
+                Button(enabled = edited != null && !processing && !saving && !aiEnhancing && !showOriginal, onClick = {
                     val bitmap = edited ?: return@Button
                     saving = true
                     saveEditedPhoto(context, bitmap) { success ->
