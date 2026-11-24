@@ -415,7 +415,7 @@ private fun saveEditedPhoto(
                 ?: error("No output URI")
             outputUri = uri
             context.contentResolver.openOutputStream(uri)?.use { stream ->
-                if (!bitmap.compress(Bitmap.CompressFormat.JPEG, 96, stream)) error("JPEG encoder unavailable")
+                if (!bitmap.compress(Bitmap.CompressFormat.JPEG, 100, stream)) error("JPEG encoder unavailable")
                 stream.flush()
             } ?: error("Could not open output stream")
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -427,6 +427,6 @@ private fun saveEditedPhoto(
             outputUri?.let { context.contentResolver.delete(it, null, null) }
             false
         }
-        onComplete(success)
+        android.os.Handler(android.os.Looper.getMainLooper()).post { onComplete(success) }
     }.start()
 }
