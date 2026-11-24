@@ -21,15 +21,12 @@ object AiModelManager {
 
     fun installedModel(context: Context): File? {
         val file = File(context.filesDir, MODEL_FILE)
-        return file.takeIf { it.isFile && it.length() in 1..MAX_MODEL_BYTES }
+        return file.takeIf { it.isFile && it.length() in 1..MAX_MODEL_BYTES && runCatching { sha256(it) == EXPECTED_SHA256 }.getOrDefault(false) }
     }
 
     @Synchronized
     fun downloadAndVerify(context: Context, onProgress: (Int) -> Unit = {}): File {
-        installedModel(context)?.let { existing ->
-            if (sha256(existing) == EXPECTED_SHA256) return existing
-            existing.delete()
-        }
+        installedModel(context)?.let { return it }
 
         val destination = File(context.filesDir, MODEL_FILE)
         val temporary = File(context.filesDir, "$MODEL_FILE.download")
