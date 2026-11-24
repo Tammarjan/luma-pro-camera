@@ -26,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import java.text.SimpleDateFormat
@@ -60,6 +61,16 @@ internal fun PhotoEditorDialog(photoUri: Uri, onDismiss: () -> Unit) {
     var selectedEditorLook by remember(photoUri) { mutableStateOf("Natural") }
     var editorSection by remember(photoUri) { mutableStateOf(0) }
     var loadFailed by remember(photoUri) { mutableStateOf(false) }
+    var aiModelReady by remember(photoUri) { mutableStateOf(false) }
+    var aiDownloading by remember(photoUri) { mutableStateOf(false) }
+    var aiProgress by remember(photoUri) { mutableIntStateOf(0) }
+    var aiModelMessage by remember(photoUri) { mutableStateOf("AI model not installed") }
+    val editorScope = rememberCoroutineScope()
+
+    LaunchedEffect(photoUri) {
+        aiModelReady = withContext(Dispatchers.IO) { AiModelManager.installedModel(context) != null }
+        aiModelMessage = if (aiModelReady) "Verified AI model ready for offline use" else "Download the AI model once; it will be stored on this device"
+    }
 
     LaunchedEffect(photoUri) {
         loadFailed = false
@@ -205,6 +216,49 @@ internal fun PhotoEditorDialog(photoUri: Uri, onDismiss: () -> Unit) {
                         selectedEditorLook = "Natural"
                         showOriginal = false
                     }, modifier = Modifier.weight(1f)) { Text("Reset") }
+                }
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF252525)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Text("AI Enhancement Model", color = Color.White, style = MaterialTheme.typography.titleSmall)
+                            Text(if (aiModelReady) "VERIFIED" else "NOT INSTALLED", color = if (aiModelReady) Color(0xFF80CBC4) else Color(0xFFFFCC80), style = MaterialTheme.typography.labelSmall)
+                        }
+                        Text(aiModelMessage, color = Color.LightGray, style = MaterialTheme.typography.bodySmall)
+                        if (aiDownloading) {
+                            LinearProgressIndicator(progress = { aiProgress / 100f }, modifier = Modifier.fillMaxWidth())
+                            Text("$aiProgress%", color = Color.LightGray, style = MaterialTheme.typography.labelSmall)
+                        }
+                        Button(
+                            enabled = !aiDownloading,
+                            onClick = {
+                                editorScope.launch {
+                                    aiDownloading = true
+                                    aiProgress = 0
+                                    aiModelMessage = "Downloading and verifying model…"
+                                    try {
+                                        withContext(Dispatchers.IO) {
+                                            AiModelManager.downloadAndVerify(context) { value ->
+                                                android.os.Handler(android.os.Looper.getMainLooper()).post { aiProgress = value }
+                                            }
+                                        }
+                                        aiModelReady = true
+                                        aiModelMessage = "Model verified and saved for offline use"
+                                    } catch (error: Exception) {
+                                        aiModelReady = false
+                                        aiModelMessage = error.message?.take(120) ?: "Model download failed"
+                                    } finally {
+                                        aiDownloading = false
+                                    }
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(if (aiDownloading) "Installing AI Model…" else if (aiModelReady) "Verify / Reinstall AI Model" else "Download AI Model")
+                        }
+                    }
                 }
                 if (preview != null) {
                     Image(preview.asImageBitmap(), if (showOriginal) "Original photo preview" else "Edited photo preview", Modifier.fillMaxWidth().heightIn(max = 300.dp), contentScale = androidx.compose.ui.layout.ContentScale.Fit)
