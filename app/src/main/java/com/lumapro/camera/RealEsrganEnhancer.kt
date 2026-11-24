@@ -21,6 +21,29 @@ internal object RealEsrganEnhancer {
     private const val TILE_OVERLAP = 16
     private const val SCALE = 4
 
+    private fun sampleChannel(
+        pixels: IntArray,
+        width: Int,
+        height: Int,
+        x: Float,
+        y: Float,
+        shift: Int
+    ): Float {
+        val x0 = x.toInt().coerceIn(0, width - 1)
+        val y0 = y.toInt().coerceIn(0, height - 1)
+        val x1 = (x0 + 1).coerceAtMost(width - 1)
+        val y1 = (y0 + 1).coerceAtMost(height - 1)
+        val fx = (x - x0).coerceIn(0f, 1f)
+        val fy = (y - y0).coerceIn(0f, 1f)
+        val p00 = ((pixels[y0 * width + x0] shr shift) and 255).toFloat()
+        val p10 = ((pixels[y0 * width + x1] shr shift) and 255).toFloat()
+        val p01 = ((pixels[y1 * width + x0] shr shift) and 255).toFloat()
+        val p11 = ((pixels[y1 * width + x1] shr shift) and 255).toFloat()
+        val top = p00 + (p10 - p00) * fx
+        val bottom = p01 + (p11 - p01) * fx
+        return top + (bottom - top) * fy
+    }
+
     fun enhance(
         context: Context,
         source: Bitmap,
@@ -124,11 +147,28 @@ internal object RealEsrganEnhancer {
                                         for (y in 0 until croppedHeight) {
                                             for (x in 0 until croppedWidth) {
                                                 val sourceIndex = (cropTop + y) * outputWidth + cropLeft + x
-                                                val red = (output.get(sourceIndex).coerceIn(0f, 1f) * 255f).roundToInt()
-                                                val green = (output.get(planeSize + sourceIndex).coerceIn(0f, 1f) * 255f).roundToInt()
-                                                val blue = (output.get(2 * planeSize + sourceIndex).coerceIn(0f, 1f) * 255f).roundToInt()
-                                                croppedPixels[y * croppedWidth + x] =
-                                                    Color.rgb(red, green, blue)
+                                                // Restore a restrained amount of real source micro-texture after AI
+                                                // upscaling. This counters the waxy/smoothed look without replacing
+                                                // the model's reconstructed edges or inventing extra sharpening.
+                                                val sx = (cropLeft + x).toFloat() / SCALE
+                                                val sy = (cropTop + y).toFloat() / SCALE
+                                                val aiR = output.get(sourceIndex).coerceIn(0f, 1f) * 255f
+                                                val aiG = output.get(planeSize + sourceIndex).coerceIn(0f, 1f) * 255f
+                                                val aiB = output.get(2 * planeSize + sourceIndex).coerceIn(0f, 1f) * 255f
+                                                fun detail(shift: Int): Float {
+                                                    val center = sampleChannel(pixels, inputWidth, inputHeight, sx, sy, shift)
+                                                    val neighbors = (
+                                                        sampleChannel(pixels, inputWidth, inputHeight, sx - 0.8f, sy, shift) +
+                                                        sampleChannel(pixels, inputWidth, inputHeight, sx + 0.8f, sy, shift) +
+                                                        sampleChannel(pixels, inputWidth, inputHeight, sx, sy - 0.8f, shift) +
+                                                        sampleChannel(pixels, inputWidth, inputHeight, sx, sy + 0.8f, shift)
+                                                    ) * 0.25f
+                                                    return center - neighbors
+                                                }
+                                                val red = (aiR + detail(16) * 0.32f).roundToInt().coerceIn(0, 255)
+                                                val green = (aiG + detail(8) * 0.32f).roundToInt().coerceIn(0, 255)
+                                                val blue = (aiB + detail(0) * 0.32f).roundToInt().coerceIn(0, 255)
+                                                croppedPixels[y * croppedWidth + x] = Color.rgb(red, green, blue)
                                             }
                                         }
                                         outputBitmap.setPixels(
