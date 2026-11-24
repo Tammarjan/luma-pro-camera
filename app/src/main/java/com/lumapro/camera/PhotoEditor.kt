@@ -110,83 +110,103 @@ internal fun PhotoEditorDialog(photoUri: Uri, onDismiss: () -> Unit) {
     LaunchedEffect(editBase, exposure, contrast, saturation, warmth, tint, vibrance, highlights, shadows, whites, blacks, clarity, texture, sharpening, noiseReduction, vignette) {
         val original = editBase ?: return@LaunchedEffect
         delay(100)
-        processing = true
-        val result = withContext(Dispatchers.Default) {
-            val output = Bitmap.createBitmap(original.width, original.height, Bitmap.Config.ARGB_8888)
-            val sourcePixels = IntArray(original.width * original.height)
-            original.getPixels(sourcePixels, 0, original.width, 0, 0, original.width, original.height)
-            val outputPixels = IntArray(sourcePixels.size)
-            val gain = 2.0.pow(exposure.toDouble()).toFloat()
-            val highlightAmount = highlights
-            val shadowAmount = shadows
-            val width = original.width
-            val height = original.height
-            fun pixelLuma(pixel: Int): Float = 0.2126f * ((pixel shr 16) and 0xFF) + 0.7152f * ((pixel shr 8) and 0xFF) + 0.0722f * (pixel and 0xFF)
-            for (i in sourcePixels.indices) {
-                if (i % width == 0) currentCoroutineContext().ensureActive()
-                val color = sourcePixels[i]
-                val x = i % width
-                val y = i / width
-                val a = (color ushr 24) and 0xFF
-                var r = ((color shr 16) and 0xFF).toFloat() * gain
-                var g = ((color shr 8) and 0xFF).toFloat() * gain
-                var b = (color and 0xFF).toFloat() * gain
-                val leftPixel = sourcePixels[y * width + (x - 1).coerceAtLeast(0)]
-                val rightPixel = sourcePixels[y * width + (x + 1).coerceAtMost(width - 1)]
-                val topPixel = sourcePixels[(y - 1).coerceAtLeast(0) * width + x]
-                val bottomPixel = sourcePixels[(y + 1).coerceAtMost(height - 1) * width + x]
-                val neighborR = (((leftPixel shr 16) and 255) + ((rightPixel shr 16) and 255) + ((topPixel shr 16) and 255) + ((bottomPixel shr 16) and 255)) * 0.25f
-                val neighborG = (((leftPixel shr 8) and 255) + ((rightPixel shr 8) and 255) + ((topPixel shr 8) and 255) + ((bottomPixel shr 8) and 255)) * 0.25f
-                val neighborB = ((leftPixel and 255) + (rightPixel and 255) + (topPixel and 255) + (bottomPixel and 255)) * 0.25f
-                val noiseMix = noiseReduction * 0.65f
-                val detailR = r - neighborR * gain
-                val detailG = g - neighborG * gain
-                val detailB = b - neighborB * gain
-                r = r * (1f - noiseMix) + neighborR * gain * noiseMix + detailR * sharpening * 0.9f
-                g = g * (1f - noiseMix) + neighborG * gain * noiseMix + detailG * sharpening * 0.9f
-                b = b * (1f - noiseMix) + neighborB * gain * noiseMix + detailB * sharpening * 0.9f
-                val initialLuma = (0.2126f * r + 0.7152f * g + 0.0722f * b).coerceIn(0f, 255f)
-                val normalizedLuma = initialLuma / 255f
-                val shadowMask = (1f - normalizedLuma).pow(2)
-                val highlightMask = normalizedLuma.pow(2)
-                val toneAdjustment = (shadowMask * shadowAmount - highlightMask * highlightAmount) * 72f
-                val whiteMask = normalizedLuma.pow(1.5f)
-                val blackMask = (1f - normalizedLuma).pow(1.5f)
-                val whiteBlackAdjustment = (whiteMask * whites + blackMask * blacks) * 68f
-                fun sampleLuma(sx: Int, sy: Int): Float = pixelLuma(sourcePixels[sy.coerceIn(0, height - 1) * width + sx.coerceIn(0, width - 1)])
-                val textureAverage = (sampleLuma(x - 2, y) + sampleLuma(x + 2, y) + sampleLuma(x, y - 2) + sampleLuma(x, y + 2)) * 0.25f
-                val clarityAverage = (sampleLuma(x - 7, y) + sampleLuma(x + 7, y) + sampleLuma(x, y - 7) + sampleLuma(x, y + 7)) * 0.25f
-                val textureDetail = (initialLuma - textureAverage) * texture * 0.45f
-                val clarityDetail = (initialLuma - clarityAverage) * clarity * 0.35f
-                val detailAdjustment = textureDetail + clarityDetail
-                r += toneAdjustment + whiteBlackAdjustment + detailAdjustment
-                g += toneAdjustment + whiteBlackAdjustment + detailAdjustment
-                b += toneAdjustment + whiteBlackAdjustment + detailAdjustment
-                r = (r - 128f) * contrast + 128f + warmth * 24f + tint * 12f
-                g = (g - 128f) * contrast + 128f - tint * 18f
-                b = (b - 128f) * contrast + 128f - warmth * 24f + tint * 12f
-                val luma = 0.2126f * r + 0.7152f * g + 0.0722f * b
-                val chroma = (maxOf(r, g, b) - minOf(r, g, b)).coerceIn(0f, 255f) / 255f
-                val vibranceBoost = 1f + vibrance * (1f - chroma)
-                val colorBoost = saturation * vibranceBoost
-                r = luma + (r - luma) * colorBoost
-                g = luma + (g - luma) * colorBoost
-                b = luma + (b - luma) * colorBoost
-                val nx = (x - (width - 1) * 0.5f) / (width * 0.5f).coerceAtLeast(1f)
-                val ny = (y - (height - 1) * 0.5f) / (height * 0.5f).coerceAtLeast(1f)
-                val radius = (nx * nx + ny * ny).coerceAtMost(1f)
-                val vignetteFactor = (1f - vignette * 0.72f * radius * radius).coerceAtLeast(0.1f)
-                r *= vignetteFactor
-                g *= vignetteFactor
-                b *= vignetteFactor
-                outputPixels[i] = (a shl 24) or (r.roundToInt().coerceIn(0, 255) shl 16) or
-                    (g.roundToInt().coerceIn(0, 255) shl 8) or b.roundToInt().coerceIn(0, 255)
-            }
-            output.setPixels(outputPixels, 0, original.width, 0, 0, original.width, original.height)
-            output
+
+        // Opening the editor with untouched controls should show the original immediately.
+        // Avoid running an expensive per-pixel pass just to reproduce the same bitmap.
+        val isUnchanged = exposure == 0f && contrast == 1f && saturation == 1f &&
+            warmth == 0f && tint == 0f && vibrance == 0f && highlights == 0f &&
+            shadows == 0f && whites == 0f && blacks == 0f && clarity == 0f &&
+            texture == 0f && sharpening == 0f && noiseReduction == 0f && vignette == 0f
+        if (isUnchanged) {
+            edited = original
+            processing = false
+            return@LaunchedEffect
         }
-        edited = result
-        processing = false
+
+        processing = true
+        try {
+            val result = withContext(Dispatchers.Default) {
+                val output = Bitmap.createBitmap(original.width, original.height, Bitmap.Config.ARGB_8888)
+                val sourcePixels = IntArray(original.width * original.height)
+                original.getPixels(sourcePixels, 0, original.width, 0, 0, original.width, original.height)
+                val outputPixels = IntArray(sourcePixels.size)
+                val gain = 2.0.pow(exposure.toDouble()).toFloat()
+                val highlightAmount = highlights
+                val shadowAmount = shadows
+                val width = original.width
+                val height = original.height
+                fun pixelLuma(pixel: Int): Float = 0.2126f * ((pixel shr 16) and 0xFF) + 0.7152f * ((pixel shr 8) and 0xFF) + 0.0722f * (pixel and 0xFF)
+                for (i in sourcePixels.indices) {
+                    if (i % width == 0) currentCoroutineContext().ensureActive()
+                    val color = sourcePixels[i]
+                    val x = i % width
+                    val y = i / width
+                    val a = (color ushr 24) and 0xFF
+                    var r = ((color shr 16) and 0xFF).toFloat() * gain
+                    var g = ((color shr 8) and 0xFF).toFloat() * gain
+                    var b = (color and 0xFF).toFloat() * gain
+                    val leftPixel = sourcePixels[y * width + (x - 1).coerceAtLeast(0)]
+                    val rightPixel = sourcePixels[y * width + (x + 1).coerceAtMost(width - 1)]
+                    val topPixel = sourcePixels[(y - 1).coerceAtLeast(0) * width + x]
+                    val bottomPixel = sourcePixels[(y + 1).coerceAtMost(height - 1) * width + x]
+                    val neighborR = (((leftPixel shr 16) and 255) + ((rightPixel shr 16) and 255) + ((topPixel shr 16) and 255) + ((bottomPixel shr 16) and 255)) * 0.25f
+                    val neighborG = (((leftPixel shr 8) and 255) + ((rightPixel shr 8) and 255) + ((topPixel shr 8) and 255) + ((bottomPixel shr 8) and 255)) * 0.25f
+                    val neighborB = ((leftPixel and 255) + (rightPixel and 255) + (topPixel and 255) + (bottomPixel and 255)) * 0.25f
+                    val noiseMix = noiseReduction * 0.65f
+                    val detailR = r - neighborR * gain
+                    val detailG = g - neighborG * gain
+                    val detailB = b - neighborB * gain
+                    r = r * (1f - noiseMix) + neighborR * gain * noiseMix + detailR * sharpening * 0.9f
+                    g = g * (1f - noiseMix) + neighborG * gain * noiseMix + detailG * sharpening * 0.9f
+                    b = b * (1f - noiseMix) + neighborB * gain * noiseMix + detailB * sharpening * 0.9f
+                    val initialLuma = (0.2126f * r + 0.7152f * g + 0.0722f * b).coerceIn(0f, 255f)
+                    val normalizedLuma = initialLuma / 255f
+                    val shadowMask = (1f - normalizedLuma).pow(2)
+                    val highlightMask = normalizedLuma.pow(2)
+                    val toneAdjustment = (shadowMask * shadowAmount - highlightMask * highlightAmount) * 72f
+                    val whiteMask = normalizedLuma.pow(1.5f)
+                    val blackMask = (1f - normalizedLuma).pow(1.5f)
+                    val whiteBlackAdjustment = (whiteMask * whites + blackMask * blacks) * 68f
+                    fun sampleLuma(sx: Int, sy: Int): Float = pixelLuma(sourcePixels[sy.coerceIn(0, height - 1) * width + sx.coerceIn(0, width - 1)])
+                    val textureAverage = (sampleLuma(x - 2, y) + sampleLuma(x + 2, y) + sampleLuma(x, y - 2) + sampleLuma(x, y + 2)) * 0.25f
+                    val clarityAverage = (sampleLuma(x - 7, y) + sampleLuma(x + 7, y) + sampleLuma(x, y - 7) + sampleLuma(x, y + 7)) * 0.25f
+                    val textureDetail = (initialLuma - textureAverage) * texture * 0.45f
+                    val clarityDetail = (initialLuma - clarityAverage) * clarity * 0.35f
+                    val detailAdjustment = textureDetail + clarityDetail
+                    r += toneAdjustment + whiteBlackAdjustment + detailAdjustment
+                    g += toneAdjustment + whiteBlackAdjustment + detailAdjustment
+                    b += toneAdjustment + whiteBlackAdjustment + detailAdjustment
+                    r = (r - 128f) * contrast + 128f + warmth * 24f + tint * 12f
+                    g = (g - 128f) * contrast + 128f - tint * 18f
+                    b = (b - 128f) * contrast + 128f - warmth * 24f + tint * 12f
+                    val luma = 0.2126f * r + 0.7152f * g + 0.0722f * b
+                    val chroma = (maxOf(r, g, b) - minOf(r, g, b)).coerceIn(0f, 255f) / 255f
+                    val vibranceBoost = 1f + vibrance * (1f - chroma)
+                    val colorBoost = saturation * vibranceBoost
+                    r = luma + (r - luma) * colorBoost
+                    g = luma + (g - luma) * colorBoost
+                    b = luma + (b - luma) * colorBoost
+                    val nx = (x - (width - 1) * 0.5f) / (width * 0.5f).coerceAtLeast(1f)
+                    val ny = (y - (height - 1) * 0.5f) / (height * 0.5f).coerceAtLeast(1f)
+                    val radius = (nx * nx + ny * ny).coerceAtMost(1f)
+                    val vignetteFactor = (1f - vignette * 0.72f * radius * radius).coerceAtLeast(0.1f)
+                    r *= vignetteFactor
+                    g *= vignetteFactor
+                    b *= vignetteFactor
+                    outputPixels[i] = (a shl 24) or (r.roundToInt().coerceIn(0, 255) shl 16) or
+                        (g.roundToInt().coerceIn(0, 255) shl 8) or b.roundToInt().coerceIn(0, 255)
+                }
+                output.setPixels(outputPixels, 0, original.width, 0, 0, original.width, original.height)
+                output
+            }
+            edited = result
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            aiModelMessage = "Editor processing failed: " + (error.message ?: "please retry")
+        } finally {
+            processing = false
+        }
     }
 
     AlertDialog(
