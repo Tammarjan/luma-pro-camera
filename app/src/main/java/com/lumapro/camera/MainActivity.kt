@@ -50,6 +50,7 @@ import androidx.camera.video.MediaStoreOutputOptions
 import androidx.camera.video.VideoRecordEvent
 import androidx.camera.core.resolutionselector.AspectRatioStrategy
 import androidx.camera.core.resolutionselector.ResolutionSelector
+import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.background
@@ -215,7 +216,7 @@ private fun LumaCameraScreen() {
     var isCapturing by remember { mutableStateOf(false) }
     var showCaptureFlash by remember { mutableStateOf(false) }
     var captureTimerSeconds by remember { mutableIntStateOf(0) }
-    var jpegQuality by remember { mutableIntStateOf(95) }
+    var jpegQuality by remember { mutableIntStateOf(100) }
     var maximizeQuality by remember { mutableStateOf(true) }
     var aspectRatioWide by remember { mutableStateOf(false) }
     var timerCountdown by remember { mutableIntStateOf(0) }
@@ -1227,6 +1228,8 @@ private fun CameraPreview(
                         if (aspectRatioWide) AspectRatioStrategy.RATIO_16_9_FALLBACK_AUTO_STRATEGY
                         else AspectRatioStrategy.RATIO_4_3_FALLBACK_AUTO_STRATEGY
                     )
+                    .setResolutionStrategy(ResolutionStrategy.HIGHEST_AVAILABLE_STRATEGY)
+                    .setAllowedResolutionMode(ResolutionSelector.PREFER_HIGHER_RESOLUTION_OVER_CAPTURE_RATE)
                     .build()
                 val captureBuilder = ImageCapture.Builder()
                     .setResolutionSelector(resolutionSelector)
@@ -1317,6 +1320,9 @@ private fun CameraPreview(
                         boundCamera = cameraProvider.bindToLifecycle(lifecycleOwner, selector, preview, capture, video)
                     }
                     onAnalysis(List(32) { 0f }, 0f, emptyList(), emptyList())
+                }
+                capture.resolutionInfo?.resolution?.let { selectedSize ->
+                    android.util.Log.i("LumaProCamera", "Selected still-photo resolution: ${selectedSize.width}x${selectedSize.height}")
                 }
                 onCameraReady(boundCamera, capture, video)
                 onRawCapabilityChanged(supportsRawJpeg)
