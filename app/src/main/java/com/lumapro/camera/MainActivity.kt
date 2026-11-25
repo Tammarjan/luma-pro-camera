@@ -238,7 +238,7 @@ private fun LumaCameraScreen() {
     var liveHighlights by remember { mutableFloatStateOf(0.12f) }
     var liveShadows by remember { mutableFloatStateOf(0.10f) }
     var hdrMode by remember { mutableIntStateOf(0) } // 0=off, 1=HDR, 2=HDR+
-    val hdrStrength = when (hdrMode) { 1 -> 0.45f; 2 -> 0.90f; else -> 0f }
+    val hdrStrength = when (hdrMode) { 1 -> 0.30f; 2 -> 0.55f; else -> 0f }
     var selectedLiveLook by remember { mutableStateOf("LUMA AUTO") }
     var zoomRatio by remember { mutableStateOf(1f) }
     var minZoomRatio by remember { mutableStateOf(1f) }
@@ -1239,7 +1239,7 @@ private fun CameraPreview(
                 effectExecutor
             ) { error ->
                 android.util.Log.e("LumaProCamera", "Live GPU effect failed", error)
-            }.also { it.setEffects(listOf(Brightness(liveBrightness), Contrast(liveContrast), HslAdjustment.Builder().adjustSaturation((liveSaturation * 100f).coerceIn(-100f, 100f)).build(), RgbAdjustment.Builder().setRedScale((1f + liveWarmth * 0.16f + liveTint * 0.07f).coerceIn(0.75f, 1.25f)).setGreenScale((1f - liveTint * 0.12f).coerceIn(0.75f, 1.25f)).setBlueScale((1f - liveWarmth * 0.16f + liveTint * 0.07f).coerceIn(0.75f, 1.25f)).build(), LiveDetailEffect(liveDenoise, liveSharpening, liveClarity, liveTexture))) }
+            }.also { it.setEffects(listOf(Brightness(liveBrightness), Contrast(liveContrast), HslAdjustment.Builder().adjustSaturation((liveSaturation * 100f).coerceIn(-100f, 100f)).build(), RgbAdjustment.Builder().setRedScale((1f + liveWarmth * 0.16f + liveTint * 0.07f).coerceIn(0.75f, 1.25f)).setGreenScale((1f - liveTint * 0.12f).coerceIn(0.75f, 1.25f)).setBlueScale((1f - liveWarmth * 0.16f + liveTint * 0.07f).coerceIn(0.75f, 1.25f)).build(), LiveDetailEffect(liveDenoise, liveSharpening, liveClarity, liveTexture, liveHighlights, liveShadows, hdrStrength))) }
         }.getOrNull()
         activeMedia3Effect = media3Effect
         val lastAnalysisUpdate = java.util.concurrent.atomic.AtomicLong(0L)
