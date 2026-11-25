@@ -488,9 +488,9 @@ private fun LumaCameraScreen() {
                     color = Color(0x88333333), shape = RoundedCornerShape(18.dp)
                 ) { Text("GALLERY", color = Color.White, modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp), style = MaterialTheme.typography.labelSmall) }
                 Surface(
-                    modifier = Modifier.clickable { cameraPanelTab = 1 },
+                    modifier = Modifier.clickable { showSettings = true },
                     color = Color(0x88333333), shape = CircleShape
-                ) { Text("⋮", color = Color.White, modifier = Modifier.padding(horizontal = 13.dp, vertical = 6.dp), style = MaterialTheme.typography.titleMedium) }
+                ) { Text("⚙", color = Color.White, modifier = Modifier.padding(horizontal = 13.dp, vertical = 6.dp), style = MaterialTheme.typography.titleMedium) }
             }
         }
 
