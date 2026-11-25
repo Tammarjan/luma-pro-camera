@@ -6,6 +6,9 @@ uniform float uDenoise;
 uniform float uSharpen;
 uniform float uClarity;
 uniform float uTexture;
+uniform float uHighlights;
+uniform float uShadows;
+uniform float uHdrStrength;
 varying vec2 vTexSamplingCoord;
 
 float luma(vec3 c) {
@@ -63,6 +66,18 @@ void main() {
   result += fineDetail * sharpenAmount * 2.2;
   result += localDetail * clarityAmount * 2.8;
   result += fineDetail * textureAmount * 3.0;
+
+  // Single-frame highlight recovery and shadow lift. This preserves color
+  // ratios while gently compressing bright regions and opening dark regions.
+  float resultLuma = luma(max(result, vec3(0.0)));
+  float shadowMask = pow(clamp((0.62 - resultLuma) / 0.62, 0.0, 1.0), 1.35);
+  float highlightMask = pow(clamp((resultLuma - 0.42) / 0.58, 0.0, 1.0), 1.25);
+  float hdr = clamp(uHdrStrength, 0.0, 1.0);
+  float shadowLift = clamp(uShadows, 0.0, 1.0) * 0.22 + hdr * 0.13;
+  float highlightPull = clamp(uHighlights, 0.0, 1.0) * 0.28 + hdr * 0.20;
+  float mappedLuma = resultLuma + shadowMask * shadowLift - highlightMask * highlightPull;
+  float toneRatio = clamp(mappedLuma / max(resultLuma, 0.035), 0.62, 1.48);
+  result *= toneRatio;
 
   gl_FragColor = vec4(clamp(result, 0.0, 1.0), 1.0);
 }
