@@ -28,13 +28,13 @@ void main() {
 
   float centerLuma = luma(center);
   float wL = exp(-abs(luma(left) - centerLuma) * 28.0);
-  float wR = exp(-abs(luma(right) - centerLuma) * 18.0);
-  float wU = exp(-abs(luma(up) - centerLuma) * 18.0);
-  float wD = exp(-abs(luma(down) - centerLuma) * 18.0);
-  float wA = exp(-abs(luma(diagonalA) - centerLuma) * 18.0);
-  float wB = exp(-abs(luma(diagonalB) - centerLuma) * 18.0);
-  float wC = exp(-abs(luma(diagonalC) - centerLuma) * 18.0);
-  float wDg = exp(-abs(luma(diagonalD) - centerLuma) * 18.0);
+  float wR = exp(-abs(luma(right) - centerLuma) * 28.0);
+  float wU = exp(-abs(luma(up) - centerLuma) * 28.0);
+  float wD = exp(-abs(luma(down) - centerLuma) * 28.0);
+  float wA = exp(-abs(luma(diagonalA) - centerLuma) * 28.0);
+  float wB = exp(-abs(luma(diagonalB) - centerLuma) * 28.0);
+  float wC = exp(-abs(luma(diagonalC) - centerLuma) * 28.0);
+  float wDg = exp(-abs(luma(diagonalD) - centerLuma) * 28.0);
 
   vec3 weighted = center + left*wL + right*wR + up*wU + down*wD
       + diagonalA*wA + diagonalB*wB + diagonalC*wC + diagonalD*wDg;
