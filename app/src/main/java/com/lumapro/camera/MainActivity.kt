@@ -235,6 +235,10 @@ private fun LumaCameraScreen() {
     var liveSharpening by remember { mutableFloatStateOf(0.10f) }
     var liveClarity by remember { mutableFloatStateOf(0f) }
     var liveTexture by remember { mutableFloatStateOf(0f) }
+    var liveHighlights by remember { mutableFloatStateOf(0.12f) }
+    var liveShadows by remember { mutableFloatStateOf(0.10f) }
+    var hdrMode by remember { mutableIntStateOf(0) } // 0=off, 1=HDR, 2=HDR+
+    val hdrStrength = when (hdrMode) { 1 -> 0.45f; 2 -> 0.90f; else -> 0f }
     var selectedLiveLook by remember { mutableStateOf("LUMA AUTO") }
     var zoomRatio by remember { mutableStateOf(1f) }
     var minZoomRatio by remember { mutableStateOf(1f) }
@@ -284,6 +288,9 @@ private fun LumaCameraScreen() {
             liveSharpening = number("sharpening", 0f, 0f, 1f)
             liveClarity = number("clarity", 0f, 0f, 1f)
             liveTexture = number("texture", 0f, 0f, 1f)
+            liveHighlights = number("highlights", liveHighlights, 0f, 1f)
+            liveShadows = number("shadows", liveShadows, 0f, 1f)
+            hdrMode = json.optInt("hdrMode", hdrMode).coerceIn(0, 2)
             selectedLiveLook = json.optString("name", "IMPORTED").take(32)
             Toast.makeText(context, "Camera configuration imported", Toast.LENGTH_SHORT).show()
         }.onFailure {
@@ -305,6 +312,9 @@ private fun LumaCameraScreen() {
                 put("sharpening", liveSharpening.toDouble())
                 put("clarity", liveClarity.toDouble())
                 put("texture", liveTexture.toDouble())
+                put("highlights", liveHighlights.toDouble())
+                put("shadows", liveShadows.toDouble())
+                put("hdrMode", hdrMode)
             }
             context.contentResolver.openOutputStream(uri)?.use { it.write(json.toString(2).toByteArray(Charsets.UTF_8)) }
                 ?: error("Cannot write configuration")
@@ -396,6 +406,9 @@ private fun LumaCameraScreen() {
                 liveSharpening = liveSharpening,
                 liveClarity = liveClarity,
                 liveTexture = liveTexture,
+                liveHighlights = liveHighlights,
+                liveShadows = liveShadows,
+                hdrStrength = hdrStrength,
                 jpegQuality = jpegQuality,
                 maximizeQuality = maximizeQuality,
                 rawCaptureEnabled = rawCaptureEnabled,
@@ -686,6 +699,7 @@ private fun LumaCameraScreen() {
                                     liveBrightness = 0f; liveContrast = 0f; liveSaturation = 0f
                                     liveWarmth = 0f; liveTint = 0f; liveDenoise = 0f
                                     liveSharpening = 0f; liveClarity = 0f; liveTexture = 0f
+                                    liveHighlights = 0f; liveShadows = 0f; hdrMode = 0
                                     selectedLiveLook = "STANDARD"
                                 }
                             }
@@ -722,11 +736,21 @@ private fun LumaCameraScreen() {
                             Slider(value = liveClarity, onValueChange = { liveClarity = it }, valueRange = 0f..1f)
                             Text("Texture ${(liveTexture * 100).roundToInt()}%", color = Color.White)
                             Slider(value = liveTexture, onValueChange = { liveTexture = it }, valueRange = 0f..1f)
+                            Text("LIVE HDR TONE", color = Color(0xFFFFD54F))
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                QuickCameraChip("OFF", true, hdrMode == 0) { hdrMode = 0 }
+                                QuickCameraChip("HDR", true, hdrMode == 1) { hdrMode = 1 }
+                                QuickCameraChip("HDR+", true, hdrMode == 2) { hdrMode = 2 }
+                            }
+                            Text("Highlights ${(liveHighlights * 100).roundToInt()}%", color = Color.White)
+                            Slider(value = liveHighlights, onValueChange = { liveHighlights = it }, valueRange = 0f..1f)
+                            Text("Shadows ${(liveShadows * 100).roundToInt()}%", color = Color.White)
+                            Slider(value = liveShadows, onValueChange = { liveShadows = it }, valueRange = 0f..1f)
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Button(onClick = { importConfigLauncher.launch(arrayOf("application/json", "text/json", "*/*")) }, modifier = Modifier.weight(1f)) { Text("IMPORT CONFIG") }
                                 Button(onClick = { exportConfigLauncher.launch("LumaCamera-${selectedLiveLook.replace(' ', '-')}.json") }, modifier = Modifier.weight(1f)) { Text("EXPORT CONFIG") }
                             }
-                            Text("RAW capture remains unprocessed. Standard keeps all these values at zero.", color = Color.LightGray, style = MaterialTheme.typography.bodySmall)
+                            Text("HDR/HDR+ are single-frame live tone mapping, not multi-frame computational HDR. RAW remains unprocessed.", color = Color.LightGray, style = MaterialTheme.typography.bodySmall)
                         }
                         1 -> {
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -1154,6 +1178,9 @@ private fun CameraPreview(
     liveSharpening: Float,
     liveClarity: Float,
     liveTexture: Float,
+    liveHighlights: Float,
+    liveShadows: Float,
+    hdrStrength: Float,
     jpegQuality: Int,
     maximizeQuality: Boolean,
     rawCaptureEnabled: Boolean,
@@ -1177,7 +1204,7 @@ private fun CameraPreview(
     var activeMedia3Effect by remember { mutableStateOf<Media3Effect?>(null) }
     SideEffect {
         activeMedia3Effect?.setEffects(
-            listOf(Brightness(liveBrightness.coerceIn(-1f, 1f)), Contrast(liveContrast.coerceIn(-1f, 1f)), HslAdjustment.Builder().adjustSaturation((liveSaturation * 100f).coerceIn(-100f, 100f)).build(), RgbAdjustment.Builder().setRedScale((1f + liveWarmth * 0.16f + liveTint * 0.07f).coerceIn(0.75f, 1.25f)).setGreenScale((1f - liveTint * 0.12f).coerceIn(0.75f, 1.25f)).setBlueScale((1f - liveWarmth * 0.16f + liveTint * 0.07f).coerceIn(0.75f, 1.25f)).build(), LiveDetailEffect(liveDenoise, liveSharpening, liveClarity, liveTexture))
+            listOf(Brightness(liveBrightness.coerceIn(-1f, 1f)), Contrast(liveContrast.coerceIn(-1f, 1f)), HslAdjustment.Builder().adjustSaturation((liveSaturation * 100f).coerceIn(-100f, 100f)).build(), RgbAdjustment.Builder().setRedScale((1f + liveWarmth * 0.16f + liveTint * 0.07f).coerceIn(0.75f, 1.25f)).setGreenScale((1f - liveTint * 0.12f).coerceIn(0.75f, 1.25f)).setBlueScale((1f - liveWarmth * 0.16f + liveTint * 0.07f).coerceIn(0.75f, 1.25f)).build(), LiveDetailEffect(liveDenoise, liveSharpening, liveClarity, liveTexture, liveHighlights, liveShadows, hdrStrength))
         )
     }
     AndroidView(
