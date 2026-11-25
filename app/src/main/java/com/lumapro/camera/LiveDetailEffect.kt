@@ -27,7 +27,8 @@ class LiveDetailEffect(
     }
 
     override fun isNoOp(inputWidth: Int, inputHeight: Int): Boolean {
-        return denoise <= 0f && sharpening <= 0f && clarity <= 0f && texture <= 0f
+        return denoise <= 0f && sharpening <= 0f && clarity <= 0f && texture <= 0f &&
+            highlights <= 0f && shadows <= 0f && hdrStrength <= 0f
     }
 }
 
