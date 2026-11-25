@@ -17,10 +17,13 @@ class LiveDetailEffect(
     private val denoise: Float,
     private val sharpening: Float,
     private val clarity: Float,
-    private val texture: Float
+    private val texture: Float,
+    private val highlights: Float = 0f,
+    private val shadows: Float = 0f,
+    private val hdrStrength: Float = 0f
 ) : GlEffect {
     override fun toGlShaderProgram(context: Context, useHdr: Boolean): GlShaderProgram {
-        return LiveDetailShaderProgram(context, useHdr, denoise, sharpening, clarity, texture)
+        return LiveDetailShaderProgram(context, useHdr, denoise, sharpening, clarity, texture, highlights, shadows, hdrStrength)
     }
 
     override fun isNoOp(inputWidth: Int, inputHeight: Int): Boolean {
@@ -35,7 +38,10 @@ private class LiveDetailShaderProgram(
     denoise: Float,
     sharpening: Float,
     clarity: Float,
-    texture: Float
+    texture: Float,
+    highlights: Float,
+    shadows: Float,
+    hdrStrength: Float
 ) : BaseGlShaderProgram(useHdr, 1) {
     private val glProgram: GlProgram
 
@@ -57,6 +63,9 @@ private class LiveDetailShaderProgram(
         glProgram.setFloatUniform("uSharpen", sharpening.coerceIn(0f, 1f))
         glProgram.setFloatUniform("uClarity", clarity.coerceIn(0f, 1f))
         glProgram.setFloatUniform("uTexture", texture.coerceIn(0f, 1f))
+        glProgram.setFloatUniform("uHighlights", highlights.coerceIn(0f, 1f))
+        glProgram.setFloatUniform("uShadows", shadows.coerceIn(0f, 1f))
+        glProgram.setFloatUniform("uHdrStrength", hdrStrength.coerceIn(0f, 1f))
     }
 
     override fun configure(inputWidth: Int, inputHeight: Int): Size {
