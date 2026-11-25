@@ -119,6 +119,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import coil.compose.AsyncImage
+import org.json.JSONObject
 
 class MainActivity : ComponentActivity() {
     var volumeCaptureAction: (() -> Unit)? = null
@@ -267,6 +268,51 @@ private fun LumaCameraScreen() {
     var manualFocusEnabled by remember { mutableStateOf(false) }
     var supportedWbModes by remember { mutableStateOf(listOf(CaptureRequest.CONTROL_AWB_MODE_AUTO)) }
     var selectedWbMode by remember { mutableIntStateOf(CaptureRequest.CONTROL_AWB_MODE_AUTO) }
+
+    val importConfigLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) runCatching {
+            val json = context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { JSONObject(it.readText()) }
+                ?: error("Cannot read configuration")
+            fun number(key: String, fallback: Float, min: Float, max: Float): Float =
+                json.optDouble(key, fallback.toDouble()).toFloat().takeIf { it.isFinite() }?.coerceIn(min, max) ?: fallback
+            liveBrightness = number("brightness", 0f, -1f, 1f)
+            liveContrast = number("contrast", 0f, -1f, 1f)
+            liveSaturation = number("saturation", 0f, -1f, 1f)
+            liveWarmth = number("warmth", 0f, -1f, 1f)
+            liveTint = number("tint", 0f, -1f, 1f)
+            liveDenoise = number("denoise", 0f, 0f, 1f)
+            liveSharpening = number("sharpening", 0f, 0f, 1f)
+            liveClarity = number("clarity", 0f, 0f, 1f)
+            liveTexture = number("texture", 0f, 0f, 1f)
+            selectedLiveLook = json.optString("name", "IMPORTED").take(32)
+            Toast.makeText(context, "Camera configuration imported", Toast.LENGTH_SHORT).show()
+        }.onFailure {
+            Toast.makeText(context, "Invalid Luma configuration", Toast.LENGTH_LONG).show()
+        }
+    }
+    val exportConfigLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
+        if (uri != null) runCatching {
+            val json = JSONObject().apply {
+                put("format", "luma-camera-config")
+                put("version", 1)
+                put("name", selectedLiveLook)
+                put("brightness", liveBrightness.toDouble())
+                put("contrast", liveContrast.toDouble())
+                put("saturation", liveSaturation.toDouble())
+                put("warmth", liveWarmth.toDouble())
+                put("tint", liveTint.toDouble())
+                put("denoise", liveDenoise.toDouble())
+                put("sharpening", liveSharpening.toDouble())
+                put("clarity", liveClarity.toDouble())
+                put("texture", liveTexture.toDouble())
+            }
+            context.contentResolver.openOutputStream(uri)?.use { it.write(json.toString(2).toByteArray(Charsets.UTF_8)) }
+                ?: error("Cannot write configuration")
+            Toast.makeText(context, "Configuration exported", Toast.LENGTH_SHORT).show()
+        }.onFailure {
+            Toast.makeText(context, "Could not export configuration", Toast.LENGTH_LONG).show()
+        }
+    }
 
     DisposableEffect(levelEnabled) {
         if (!levelEnabled) {
@@ -661,6 +707,10 @@ private fun LumaCameraScreen() {
                             Slider(value = liveClarity, onValueChange = { liveClarity = it }, valueRange = 0f..1f)
                             Text("Texture ${(liveTexture * 100).roundToInt()}%", color = Color.White)
                             Slider(value = liveTexture, onValueChange = { liveTexture = it }, valueRange = 0f..1f)
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Button(onClick = { importConfigLauncher.launch(arrayOf("application/json", "text/json", "*/*")) }, modifier = Modifier.weight(1f)) { Text("IMPORT CONFIG") }
+                                Button(onClick = { exportConfigLauncher.launch("LumaCamera-${selectedLiveLook.replace(' ', '-')}.json") }, modifier = Modifier.weight(1f)) { Text("EXPORT CONFIG") }
+                            }
                             Text("RAW capture remains unprocessed. Standard keeps all these values at zero.", color = Color.LightGray, style = MaterialTheme.typography.bodySmall)
                         }
                         1 -> {
