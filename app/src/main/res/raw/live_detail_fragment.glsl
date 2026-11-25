@@ -1,5 +1,5 @@
 #version 100
-precision mediump float;
+precision highp float;
 uniform sampler2D uTexSampler;
 uniform vec2 uTexelSize;
 uniform float uDenoise;
@@ -9,53 +9,60 @@ uniform float uTexture;
 varying vec2 vTexSamplingCoord;
 
 float luma(vec3 c) {
-  return dot(c, vec3(0.299, 0.587, 0.114));
+  return dot(c, vec3(0.2126, 0.7152, 0.0722));
+}
+
+vec3 sampleAt(vec2 uv, vec2 offset) {
+  return texture2D(uTexSampler, clamp(uv + offset * uTexelSize, vec2(0.001), vec2(0.999))).rgb;
 }
 
 void main() {
   vec2 uv = vTexSamplingCoord;
   vec3 center = texture2D(uTexSampler, uv).rgb;
 
-  vec3 left = texture2D(uTexSampler, uv - vec2(uTexelSize.x, 0.0)).rgb;
-  vec3 right = texture2D(uTexSampler, uv + vec2(uTexelSize.x, 0.0)).rgb;
-  vec3 up = texture2D(uTexSampler, uv - vec2(0.0, uTexelSize.y)).rgb;
-  vec3 down = texture2D(uTexSampler, uv + vec2(0.0, uTexelSize.y)).rgb;
+  // Edge-aware 8-neighbour denoise. Strong enough to be visible at 100,
+  // while reducing cross-edge smearing compared with a plain box blur.
+  vec3 n1 = sampleAt(uv, vec2(-1.0, 0.0));
+  vec3 n2 = sampleAt(uv, vec2( 1.0, 0.0));
+  vec3 n3 = sampleAt(uv, vec2(0.0, -1.0));
+  vec3 n4 = sampleAt(uv, vec2(0.0,  1.0));
+  vec3 n5 = sampleAt(uv, vec2(-1.0, -1.0));
+  vec3 n6 = sampleAt(uv, vec2( 1.0, -1.0));
+  vec3 n7 = sampleAt(uv, vec2(-1.0,  1.0));
+  vec3 n8 = sampleAt(uv, vec2( 1.0,  1.0));
 
-  vec3 diagonalA = texture2D(uTexSampler, uv + uTexelSize).rgb;
-  vec3 diagonalB = texture2D(uTexSampler, uv - uTexelSize).rgb;
-  vec3 diagonalC = texture2D(uTexSampler, uv + vec2(uTexelSize.x, -uTexelSize.y)).rgb;
-  vec3 diagonalD = texture2D(uTexSampler, uv + vec2(-uTexelSize.x, uTexelSize.y)).rgb;
+  float y0 = luma(center);
+  float w1 = exp(-abs(luma(n1)-y0)*18.0);
+  float w2 = exp(-abs(luma(n2)-y0)*18.0);
+  float w3 = exp(-abs(luma(n3)-y0)*18.0);
+  float w4 = exp(-abs(luma(n4)-y0)*18.0);
+  float w5 = exp(-abs(luma(n5)-y0)*18.0)*0.7071;
+  float w6 = exp(-abs(luma(n6)-y0)*18.0)*0.7071;
+  float w7 = exp(-abs(luma(n7)-y0)*18.0)*0.7071;
+  float w8 = exp(-abs(luma(n8)-y0)*18.0)*0.7071;
+  vec3 sum = center*1.5 + n1*w1+n2*w2+n3*w3+n4*w4+n5*w5+n6*w6+n7*w7+n8*w8;
+  float total = 1.5+w1+w2+w3+w4+w5+w6+w7+w8;
+  vec3 denoised = sum / max(total, 0.0001);
 
-  float centerLuma = luma(center);
-  float wL = exp(-abs(luma(left) - centerLuma) * 28.0);
-  float wR = exp(-abs(luma(right) - centerLuma) * 28.0);
-  float wU = exp(-abs(luma(up) - centerLuma) * 28.0);
-  float wD = exp(-abs(luma(down) - centerLuma) * 28.0);
-  float wA = exp(-abs(luma(diagonalA) - centerLuma) * 28.0);
-  float wB = exp(-abs(luma(diagonalB) - centerLuma) * 28.0);
-  float wC = exp(-abs(luma(diagonalC) - centerLuma) * 28.0);
-  float wDg = exp(-abs(luma(diagonalD) - centerLuma) * 28.0);
+  // Fine detail and local contrast at different spatial scales.
+  vec3 nearBlur = (n1+n2+n3+n4)*0.25;
+  vec3 fineDetail = center-nearBlur;
+  vec3 f1 = sampleAt(uv, vec2(-3.0, 0.0));
+  vec3 f2 = sampleAt(uv, vec2( 3.0, 0.0));
+  vec3 f3 = sampleAt(uv, vec2(0.0, -3.0));
+  vec3 f4 = sampleAt(uv, vec2(0.0,  3.0));
+  vec3 midBlur = (f1+f2+f3+f4)*0.25;
+  vec3 localDetail = center-midBlur;
 
-  vec3 weighted = center + left*wL + right*wR + up*wU + down*wD
-      + diagonalA*wA + diagonalB*wB + diagonalC*wC + diagonalD*wDg;
-  float weightSum = 1.0 + wL + wR + wU + wD + wA + wB + wC + wDg;
-  vec3 denoised = mix(center, weighted / weightSum, clamp(uDenoise, 0.0, 1.0) * 0.92);
+  float denoiseAmount = clamp(uDenoise, 0.0, 1.0);
+  float sharpenAmount = clamp(uSharpen, 0.0, 1.0);
+  float clarityAmount = clamp(uClarity, 0.0, 1.0);
+  float textureAmount = clamp(uTexture, 0.0, 1.0);
 
-  vec3 nearAverage = (left + right + up + down) * 0.25;
-  vec3 detail = center - nearAverage;
-  vec2 farStep = uTexelSize * 3.0;
-  vec3 farAverage = (
-      texture2D(uTexSampler, uv + vec2(farStep.x, 0.0)).rgb +
-      texture2D(uTexSampler, uv - vec2(farStep.x, 0.0)).rgb +
-      texture2D(uTexSampler, uv + vec2(0.0, farStep.y)).rgb +
-      texture2D(uTexSampler, uv - vec2(0.0, farStep.y)).rgb
-  ) * 0.25;
-  vec3 textureDetail = center - farAverage;
-  float midtone = 1.0 - smoothstep(0.12, 0.62, abs(centerLuma - 0.5));
+  vec3 result = mix(center, denoised, denoiseAmount*0.95);
+  result += fineDetail * sharpenAmount * 2.2;
+  result += localDetail * clarityAmount * 2.8;
+  result += fineDetail * textureAmount * 3.0;
 
-  vec3 result = denoised;
-  result += detail * clamp(uSharpen, 0.0, 1.0) * 1.35;
-  result += detail * clamp(uClarity, 0.0, 1.0) * midtone * 2.0;
-  result += textureDetail * clamp(uTexture, 0.0, 1.0) * 1.8;
   gl_FragColor = vec4(clamp(result, 0.0, 1.0), 1.0);
 }
