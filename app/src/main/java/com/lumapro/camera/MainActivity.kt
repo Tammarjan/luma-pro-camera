@@ -231,10 +231,10 @@ private fun LumaCameraScreen() {
     var liveSaturation by remember { mutableFloatStateOf(0.02f) }
     var liveWarmth by remember { mutableFloatStateOf(0.08f) }
     var liveTint by remember { mutableFloatStateOf(0.10f) }
-    var liveDenoise by remember { mutableFloatStateOf(0.26f) }
+    var liveDenoise by remember { mutableFloatStateOf(0f) }
     var liveSharpening by remember { mutableFloatStateOf(0.10f) }
-    var liveClarity by remember { mutableFloatStateOf(0.05f) }
-    var liveTexture by remember { mutableFloatStateOf(0.05f) }
+    var liveClarity by remember { mutableFloatStateOf(0f) }
+    var liveTexture by remember { mutableFloatStateOf(0f) }
     var selectedLiveLook by remember { mutableStateOf("LUMA AUTO") }
     var zoomRatio by remember { mutableStateOf(1f) }
     var minZoomRatio by remember { mutableStateOf(1f) }
@@ -687,6 +687,21 @@ private fun LumaCameraScreen() {
                                     liveWarmth = 0f; liveTint = 0f; liveDenoise = 0f
                                     liveSharpening = 0f; liveClarity = 0f; liveTexture = 0f
                                     selectedLiveLook = "STANDARD"
+                                }
+                            }
+                            Text("EFFECT TESTS • Tap one to compare against the normal preview", color = Color(0xFFFFD54F), style = MaterialTheme.typography.labelSmall)
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                QuickCameraChip(if (liveDenoise > 0.95f) "DENOISE ✓" else "TEST DENOISE", true, liveDenoise > 0.95f) {
+                                    liveDenoise = if (liveDenoise > 0.95f) 0f else 1f
+                                    liveClarity = 0f; liveTexture = 0f; liveSharpening = 0f
+                                }
+                                QuickCameraChip(if (liveClarity > 0.95f) "CLARITY ✓" else "TEST CLARITY", true, liveClarity > 0.95f) {
+                                    liveClarity = if (liveClarity > 0.95f) 0f else 1f
+                                    liveDenoise = 0f; liveTexture = 0f; liveSharpening = 0f
+                                }
+                                QuickCameraChip(if (liveTexture > 0.95f) "TEXTURE ✓" else "TEST TEXTURE", true, liveTexture > 0.95f) {
+                                    liveTexture = if (liveTexture > 0.95f) 0f else 1f
+                                    liveDenoise = 0f; liveClarity = 0f; liveSharpening = 0f
                                 }
                             }
                             Text("Brightness ${(liveBrightness * 100).roundToInt()}%", color = Color.White)
