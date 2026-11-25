@@ -27,7 +27,7 @@ void main() {
   vec3 diagonalD = texture2D(uTexSampler, uv + vec2(-uTexelSize.x, uTexelSize.y)).rgb;
 
   float centerLuma = luma(center);
-  float wL = exp(-abs(luma(left) - centerLuma) * 18.0);
+  float wL = exp(-abs(luma(left) - centerLuma) * 28.0);
   float wR = exp(-abs(luma(right) - centerLuma) * 18.0);
   float wU = exp(-abs(luma(up) - centerLuma) * 18.0);
   float wD = exp(-abs(luma(down) - centerLuma) * 18.0);
@@ -39,7 +39,7 @@ void main() {
   vec3 weighted = center + left*wL + right*wR + up*wU + down*wD
       + diagonalA*wA + diagonalB*wB + diagonalC*wC + diagonalD*wDg;
   float weightSum = 1.0 + wL + wR + wU + wD + wA + wB + wC + wDg;
-  vec3 denoised = mix(center, weighted / weightSum, clamp(uDenoise, 0.0, 1.0) * 0.72);
+  vec3 denoised = mix(center, weighted / weightSum, clamp(uDenoise, 0.0, 1.0) * 0.92);
 
   vec3 nearAverage = (left + right + up + down) * 0.25;
   vec3 detail = center - nearAverage;
@@ -51,11 +51,11 @@ void main() {
       texture2D(uTexSampler, uv - vec2(0.0, farStep.y)).rgb
   ) * 0.25;
   vec3 textureDetail = center - farAverage;
-  float midtone = 1.0 - smoothstep(0.15, 0.85, centerLuma);
+  float midtone = 1.0 - smoothstep(0.12, 0.62, abs(centerLuma - 0.5));
 
   vec3 result = denoised;
   result += detail * clamp(uSharpen, 0.0, 1.0) * 1.35;
-  result += detail * clamp(uClarity, 0.0, 1.0) * midtone * 1.15;
-  result += textureDetail * clamp(uTexture, 0.0, 1.0) * 0.9;
+  result += detail * clamp(uClarity, 0.0, 1.0) * midtone * 2.0;
+  result += textureDetail * clamp(uTexture, 0.0, 1.0) * 1.8;
   gl_FragColor = vec4(clamp(result, 0.0, 1.0), 1.0);
 }
