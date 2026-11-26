@@ -153,6 +153,8 @@ private fun LumaCameraScreen() {
     var showGallery by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
     var cameraPanelTab by remember { mutableIntStateOf(0) }
+    var adjustmentPanelOpen by remember { mutableStateOf(true) }
+    var adjustmentTab by remember { mutableIntStateOf(0) }
     var galleryPhotos by remember { mutableStateOf<List<GalleryPhoto>>(emptyList()) }
     var selectedPhoto by remember { mutableStateOf<GalleryPhoto?>(null) }
     var selectedPhotoUris by remember { mutableStateOf<Set<String>>(emptySet()) }
@@ -522,6 +524,82 @@ private fun LumaCameraScreen() {
                 Button(onClick = { permissionLauncher.launch(Manifest.permission.CAMERA) }) {
                     Text("Allow camera")
                 }
+            }
+        }
+
+        // Preview-first translucent live adjustment panel
+        if (hasPermission && adjustmentPanelOpen) {
+            Column(
+                modifier = Modifier.align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .padding(start = 14.dp, end = 14.dp, bottom = 176.dp)
+                    .background(Color(0xCC171717), RoundedCornerShape(22.dp))
+                    .padding(horizontal = 14.dp, vertical = 10.dp)
+            ) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                        listOf("LIGHT", "COLOR", "DETAIL", "HDR").forEachIndexed { index, label ->
+                            Surface(
+                                modifier = Modifier.weight(1f).clickable { adjustmentTab = index },
+                                color = if (adjustmentTab == index) Color(0xFFFFD21F) else Color(0x55333333),
+                                shape = RoundedCornerShape(18.dp)
+                            ) {
+                                Text(label, color = if (adjustmentTab == index) Color.Black else Color.White,
+                                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 9.dp),
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                    style = MaterialTheme.typography.labelSmall)
+                            }
+                        }
+                    }
+                    Text("×", color = Color.White, modifier = Modifier.padding(start = 10.dp)
+                        .clickable { adjustmentPanelOpen = false }, style = MaterialTheme.typography.headlineSmall)
+                }
+                Spacer(Modifier.height(9.dp))
+                val adjustLabel = when (adjustmentTab) {
+                    0 -> "Brightness"
+                    1 -> "Saturation"
+                    2 -> "Sharpening"
+                    else -> "HDR Strength"
+                }
+                val adjustValue = when (adjustmentTab) {
+                    0 -> liveBrightness
+                    1 -> liveSaturation
+                    2 -> liveSharpening
+                    else -> hdrStrength
+                }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text(adjustLabel, color = Color.White, style = MaterialTheme.typography.titleSmall)
+                    Text(if (adjustmentTab == 3) if (hdrMode == 2) "HDR+" else if (hdrMode == 1) "HDR" else "OFF" else "${(adjustValue * 100).roundToInt()}%",
+                        color = Color.White, style = MaterialTheme.typography.titleSmall)
+                }
+                if (adjustmentTab == 3) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        QuickCameraChip("OFF", true, hdrMode == 0) { hdrMode = 0 }
+                        QuickCameraChip("HDR", true, hdrMode == 1) { hdrMode = 1 }
+                        QuickCameraChip("HDR+", true, hdrMode == 2) { hdrMode = 2 }
+                    }
+                } else {
+                    Slider(
+                        value = adjustValue,
+                        onValueChange = {
+                            when (adjustmentTab) {
+                                0 -> liveBrightness = it
+                                1 -> liveSaturation = it
+                                2 -> liveSharpening = it
+                            }
+                        },
+                        valueRange = if (adjustmentTab == 2) 0f..1f else -1f..1f
+                    )
+                }
+            }
+        } else if (hasPermission) {
+            Surface(
+                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 176.dp)
+                    .clickable { adjustmentPanelOpen = true },
+                color = Color(0xCC171717), shape = RoundedCornerShape(22.dp)
+            ) {
+                Text("☼  ADJUST LIVE", color = Color.White,
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp))
             }
         }
 
