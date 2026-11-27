@@ -1432,7 +1432,15 @@ private fun developDngToJpeg(context: Context, sourceUri: Uri) {
     // path can return sensor-native orientation, so retain the display rotation.
     val rotationDegrees = runCatching {
         context.contentResolver.openInputStream(sourceUri)?.use { input ->
-            ExifInterface(input).rotationDegrees
+            when (ExifInterface(input).getAttributeInt(
+                ExifInterface.TAG_ORIENTATION,
+                ExifInterface.ORIENTATION_NORMAL
+            )) {
+                ExifInterface.ORIENTATION_ROTATE_90 -> 90
+                ExifInterface.ORIENTATION_ROTATE_180 -> 180
+                ExifInterface.ORIENTATION_ROTATE_270 -> 270
+                else -> 0
+            }
         } ?: 0
     }.getOrDefault(0)
     val bitmap = context.contentResolver.openFileDescriptor(sourceUri, "r")?.use { descriptor ->
