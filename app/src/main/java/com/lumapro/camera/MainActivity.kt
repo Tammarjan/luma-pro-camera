@@ -1352,10 +1352,21 @@ private fun CameraPreview(
 
     var boundCamera by remember { mutableStateOf<Camera?>(null) }
     var activeMedia3Effect by remember { mutableStateOf<Media3Effect?>(null) }
-    LaunchedEffect(activeMedia3Effect, liveBrightness, liveContrast, liveSaturation, liveWarmth, liveTint, liveDenoise, liveSharpening, liveClarity, liveTexture, liveHighlights, liveShadows, hdrStrength) {
-        activeMedia3Effect?.setEffects(
-            listOf(Brightness(liveBrightness.coerceIn(-1f, 1f)), Contrast(liveContrast.coerceIn(-1f, 1f)), HslAdjustment.Builder().adjustSaturation((liveSaturation * 100f).coerceIn(-100f, 100f)).build(), RgbAdjustment.Builder().setRedScale((1f + liveWarmth * 0.16f + liveTint * 0.07f).coerceIn(0.75f, 1.25f)).setGreenScale((1f - liveTint * 0.12f).coerceIn(0.75f, 1.25f)).setBlueScale((1f - liveWarmth * 0.16f + liveTint * 0.07f).coerceIn(0.75f, 1.25f)).build(), LiveDetailEffect(liveDenoise, liveSharpening, liveClarity, liveTexture, liveHighlights, liveShadows, hdrStrength))
-        )
+    LaunchedEffect(activeMedia3Effect, liveProcessingEnabled, liveBrightness, liveContrast, liveSaturation, liveWarmth, liveTint, liveDenoise, liveSharpening, liveClarity, liveTexture, liveHighlights, liveShadows, hdrStrength) {
+        val effects = if (liveProcessingEnabled) {
+            listOf(
+                Brightness(liveBrightness.coerceIn(-1f, 1f)),
+                Contrast(liveContrast.coerceIn(-1f, 1f)),
+                HslAdjustment.Builder().adjustSaturation((liveSaturation * 100f).coerceIn(-100f, 100f)).build(),
+                RgbAdjustment.Builder()
+                    .setRedScale((1f + liveWarmth * 0.16f + liveTint * 0.07f).coerceIn(0.75f, 1.25f))
+                    .setGreenScale((1f - liveTint * 0.12f).coerceIn(0.75f, 1.25f))
+                    .setBlueScale((1f - liveWarmth * 0.16f + liveTint * 0.07f).coerceIn(0.75f, 1.25f))
+                    .build(),
+                LiveDetailEffect(liveDenoise, liveSharpening, liveClarity, liveTexture, liveHighlights, liveShadows, hdrStrength)
+            )
+        } else emptyList()
+        activeMedia3Effect?.setEffects(effects)
     }
     AndroidView(
         modifier = modifier.pointerInput(previewView, lensFacing) {
@@ -1376,21 +1387,21 @@ private fun CameraPreview(
         factory = { previewView }
     )
 
-    DisposableEffect(previewView, lifecycleOwner, lensFacing, jpegQuality, maximizeQuality, rawCaptureEnabled, aspectRatioWide, analysisEnabled, liveProcessingEnabled) {
+    DisposableEffect(previewView, lifecycleOwner, lensFacing, jpegQuality, maximizeQuality, rawCaptureEnabled, aspectRatioWide, analysisEnabled) {
         val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
         val executor = ContextCompat.getMainExecutor(context)
         val analysisExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
-        val effectExecutor = if (liveProcessingEnabled) java.util.concurrent.Executors.newSingleThreadExecutor() else null
-        val media3Effect = if (liveProcessingEnabled) runCatching {
+        val effectExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
+        val media3Effect = runCatching {
             Media3Effect(
                 context,
                 CameraEffect.PREVIEW or CameraEffect.VIDEO_CAPTURE or
                     if (rawCaptureEnabled) 0 else CameraEffect.IMAGE_CAPTURE,
-                effectExecutor!!
+                effectExecutor
             ) { error ->
                 android.util.Log.e("LumaProCamera", "Live GPU effect failed", error)
-            }.also { it.setEffects(listOf(Brightness(liveBrightness), Contrast(liveContrast), HslAdjustment.Builder().adjustSaturation((liveSaturation * 100f).coerceIn(-100f, 100f)).build(), RgbAdjustment.Builder().setRedScale((1f + liveWarmth * 0.16f + liveTint * 0.07f).coerceIn(0.75f, 1.25f)).setGreenScale((1f - liveTint * 0.12f).coerceIn(0.75f, 1.25f)).setBlueScale((1f - liveWarmth * 0.16f + liveTint * 0.07f).coerceIn(0.75f, 1.25f)).build(), LiveDetailEffect(liveDenoise, liveSharpening, liveClarity, liveTexture, liveHighlights, liveShadows, hdrStrength))) }
-        }.getOrNull() else null
+            }
+        }.getOrNull()
         activeMedia3Effect = media3Effect
         val lastAnalysisUpdate = java.util.concurrent.atomic.AtomicLong(0L)
         cameraProviderFuture.addListener({
@@ -1523,7 +1534,7 @@ private fun CameraPreview(
             analysisExecutor.shutdown()
             activeMedia3Effect = null
             runCatching { media3Effect?.close() }
-            effectExecutor?.shutdown()
+            effectExecutor.shutdown()
         }
     }
 }
