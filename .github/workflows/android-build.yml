@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -49,3 +49,15 @@ jobs:
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 30
+
+      - name: Publish direct-install APK release
+        if: github.event_name != 'pull_request'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: test-build-${{ github.run_number }}
+          name: Luma Pro Camera Test Build ${{ github.run_number }}
+          body: |
+            Direct-install test APK for Luma Pro Camera.
+            Download the APK asset below and install it on Android. No ZIP extraction is needed.
+          files: app/build/outputs/apk/debug/app-debug.apk
+          fail_on_unmatched_files: true
