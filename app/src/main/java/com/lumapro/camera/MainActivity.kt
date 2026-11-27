@@ -439,6 +439,7 @@ private fun LumaCameraScreen() {
             CameraPreview(
                 modifier = Modifier.fillMaxSize(),
                 lensFacing = lensFacing,
+                videoMode = videoMode,
                 cameraRestartToken = cameraRestartToken,
                 liveBrightness = liveBrightness,
                 liveContrast = liveContrast,
@@ -1588,6 +1589,7 @@ private fun capturePhoto(
 private fun CameraPreview(
     modifier: Modifier = Modifier,
     lensFacing: Int,
+    videoMode: Boolean,
     cameraRestartToken: Int,
     liveBrightness: Float,
     liveContrast: Float,
@@ -1661,7 +1663,7 @@ private fun CameraPreview(
         factory = { previewView }
     )
 
-    DisposableEffect(previewView, lifecycleOwner, lensFacing, cameraRestartToken, jpegQuality, maximizeQuality, rawCaptureEnabled, aspectRatioWide, fullResolutionEnabled, analysisEnabled) {
+    DisposableEffect(previewView, lifecycleOwner, lensFacing, videoMode, cameraRestartToken, jpegQuality, maximizeQuality, rawCaptureEnabled, aspectRatioWide, fullResolutionEnabled, analysisEnabled) {
         val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
         val executor = ContextCompat.getMainExecutor(context)
         val analysisExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
@@ -1669,8 +1671,9 @@ private fun CameraPreview(
         val media3Effect = runCatching {
             Media3Effect(
                 context,
-                CameraEffect.PREVIEW or CameraEffect.VIDEO_CAPTURE or
-                    if (rawCaptureEnabled) 0 else CameraEffect.IMAGE_CAPTURE,
+                CameraEffect.PREVIEW or
+                    (if (videoMode) CameraEffect.VIDEO_CAPTURE else 0) or
+                    (if (rawCaptureEnabled) 0 else CameraEffect.IMAGE_CAPTURE),
                 effectExecutor
             ) { error ->
                 android.util.Log.e("LumaProCamera", "Live GPU effect failed", error)
@@ -1828,8 +1831,17 @@ private fun CameraPreview(
                     captureBuilder.setOutputFormat(ImageCapture.OUTPUT_FORMAT_RAW_JPEG)
                 }
                 val capture = captureBuilder.build()
-                val recorder = Recorder.Builder().setQualitySelector(QualitySelector.from(Quality.UHD, FallbackStrategy.lowerQualityOrHigherThan(Quality.FHD))).build()
-                val video = VideoCapture.withOutput(recorder)
+                // Keep the still-photo session lean. Binding VideoCapture while the user
+                // is in PHOTO mode adds another camera stream without providing any benefit.
+                // Recreate it only after the user switches to VIDEO mode.
+                val video: VideoCapture<Recorder>? = if (videoMode) {
+                    val recorder = Recorder.Builder()
+                        .setQualitySelector(QualitySelector.from(Quality.UHD, FallbackStrategy.lowerQualityOrHigherThan(Quality.FHD)))
+                        .build()
+                    VideoCapture.withOutput(recorder)
+                } else {
+                    null
+                }
 
                 cameraProvider.unbindAll()
                 if (analysisEnabled) {
@@ -1891,22 +1903,35 @@ private fun CameraPreview(
                     }
                     try {
                         val groupBuilder = UseCaseGroup.Builder()
-                            .addUseCase(preview).addUseCase(capture).addUseCase(video).addUseCase(analysis)
+                            .addUseCase(preview)
+                            .addUseCase(capture)
+                            .addUseCase(analysis)
+                        if (video != null) groupBuilder.addUseCase(video)
                         if (media3Effect != null) groupBuilder.addEffect(media3Effect)
                         boundCamera = cameraProvider.bindToLifecycle(lifecycleOwner, selector, groupBuilder.build())
                     } catch (_: Exception) {
                         analysis.clearAnalyzer()
                         analysisExecutor.shutdown()
-                        val fallbackBuilder = UseCaseGroup.Builder().addUseCase(preview).addUseCase(capture).addUseCase(video)
+                        val fallbackBuilder = UseCaseGroup.Builder()
+                            .addUseCase(preview)
+                            .addUseCase(capture)
+                        if (video != null) fallbackBuilder.addUseCase(video)
                         boundCamera = cameraProvider.bindToLifecycle(lifecycleOwner, selector, fallbackBuilder.build())
                     }
                 } else {
                     try {
-                        val groupBuilder = UseCaseGroup.Builder().addUseCase(preview).addUseCase(capture).addUseCase(video)
+                        val groupBuilder = UseCaseGroup.Builder()
+                            .addUseCase(preview)
+                            .addUseCase(capture)
+                        if (video != null) groupBuilder.addUseCase(video)
                         if (media3Effect != null) groupBuilder.addEffect(media3Effect)
                         boundCamera = cameraProvider.bindToLifecycle(lifecycleOwner, selector, groupBuilder.build())
                     } catch (_: Exception) {
-                        boundCamera = cameraProvider.bindToLifecycle(lifecycleOwner, selector, preview, capture, video)
+                        boundCamera = if (video != null) {
+                            cameraProvider.bindToLifecycle(lifecycleOwner, selector, preview, capture, video)
+                        } else {
+                            cameraProvider.bindToLifecycle(lifecycleOwner, selector, preview, capture)
+                        }
                     }
                     onAnalysis(List(32) { 0f }, 0f, emptyList(), emptyList())
                 }
