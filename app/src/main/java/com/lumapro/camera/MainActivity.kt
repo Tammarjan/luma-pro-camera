@@ -1439,24 +1439,22 @@ private fun developDngToJpeg(context: Context, sourceUri: Uri) {
                 .detachFd()
             val openResult = raw.openFd(libRawFd)
             check(openResult == 0) { "LibRaw could not open this DNG (code $openResult)" }
-            raw.setQuality(3)
+            // DCB demosaicing (quality 4) is a higher-detail interpolation than AHD (3).
+            // Keep full Bayer-domain FBDD enabled before demosaicing to suppress sensor noise.
+            raw.setQuality(4)
             raw.setCameraWhiteBalance(true)
             raw.setUseCameraMatrix(LibRaw.USE_CAMERA_MATRIX_DEFAULT)
-            raw.setOutputColorSpace(1) // LibRaw COLORSPACE_SRGB
+            raw.setOutputColorSpace(LibRaw.COLORSPACE_SRGB)
             raw.setOutputBps(8)
-            // Normalize linear sensor values for a display JPEG and blend clipped highlights.
-            raw.setAutoBrightness(true)
-            // A small RAW exposure lift helps recover midtones in dim scenes while
-            // preserving bright areas; avoid a large lift that would clip highlights.
-            raw.setExposureCorrectionBeforeDemosaic(true, 1.18f, 0.65f)
-            raw.setHighlightMode(2) // Blend highlight channels where possible.
-            // Full FBDD mode reduces Bayer-domain noise before demosaicing.
-            // Keep the later chroma smoothing restrained to avoid washing out colour detail.
+            // Use one controlled RAW exposure lift instead of stacking LibRaw's
+            // histogram auto-brightness on top of exposure correction.
+            raw.setAutoBrightness(false)
+            raw.setExposureCorrectionBeforeDemosaic(true, 1.45f, 0.80f)
+            raw.setHighlightMode(2)
             raw.setFbddNoiseReduction(2)
             // AndroidLibRaw 2.0.7 returns a HARDWARE bitmap from decodeBitmap()
             // on Android 10+, which cannot be drawn by our software Canvas finishing pass.
             // Run LibRaw explicitly and request a mutable software bitmap instead.
-            raw.setQuality(3)
             raw.setHalfSize(false)
             val processResult = raw.dcrawProcess()
             check(processResult == 0) { "LibRaw processing failed (code $processResult)" }
