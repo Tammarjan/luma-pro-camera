@@ -33,6 +33,7 @@ import androidx.media3.effect.RgbAdjustment
 import androidx.camera.core.CameraSelector
 import androidx.camera.camera2.interop.Camera2CameraControl
 import androidx.camera.camera2.interop.Camera2CameraInfo
+import androidx.camera.camera2.interop.Camera2Interop
 import androidx.camera.camera2.interop.CaptureRequestOptions
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
@@ -1510,6 +1511,43 @@ private fun CameraPreview(
                     .setResolutionSelector(resolutionSelector)
                     .setCaptureMode(if (maximizeQuality) ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY else ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
                     .setJpegQuality(jpegQuality)
+
+                // Apply the same supported high-quality ISP requests to STILL CAPTURE.
+                // CameraControl options alone primarily configure the repeating preview request.
+                val stillCaptureInterop = Camera2Interop.Extender(captureBuilder)
+                stillCaptureInterop.setCaptureRequestOption(
+                    CaptureRequest.CONTROL_AE_MODE,
+                    CaptureRequest.CONTROL_AE_MODE_ON
+                )
+                stillCaptureInterop.setCaptureRequestOption(
+                    CaptureRequest.CONTROL_AWB_MODE,
+                    CaptureRequest.CONTROL_AWB_MODE_AUTO
+                )
+                stillCaptureInterop.setCaptureRequestOption(
+                    CaptureRequest.CONTROL_AE_LOCK,
+                    false
+                )
+                stillCaptureInterop.setCaptureRequestOption(
+                    CaptureRequest.CONTROL_AWB_LOCK,
+                    false
+                )
+                val stillEdgeModes = camera2Info.getCameraCharacteristic(CameraCharacteristics.EDGE_AVAILABLE_EDGE_MODES)
+                if (stillEdgeModes?.contains(CaptureRequest.EDGE_MODE_HIGH_QUALITY) == true) {
+                    stillCaptureInterop.setCaptureRequestOption(CaptureRequest.EDGE_MODE, CaptureRequest.EDGE_MODE_HIGH_QUALITY)
+                }
+                val stillNoiseModes = camera2Info.getCameraCharacteristic(CameraCharacteristics.NOISE_REDUCTION_AVAILABLE_NOISE_REDUCTION_MODES)
+                if (stillNoiseModes?.contains(CaptureRequest.NOISE_REDUCTION_MODE_HIGH_QUALITY) == true) {
+                    stillCaptureInterop.setCaptureRequestOption(CaptureRequest.NOISE_REDUCTION_MODE, CaptureRequest.NOISE_REDUCTION_MODE_HIGH_QUALITY)
+                }
+                val stillHotPixelModes = camera2Info.getCameraCharacteristic(CameraCharacteristics.HOT_PIXEL_AVAILABLE_HOT_PIXEL_MODES)
+                if (stillHotPixelModes?.contains(CaptureRequest.HOT_PIXEL_MODE_HIGH_QUALITY) == true) {
+                    stillCaptureInterop.setCaptureRequestOption(CaptureRequest.HOT_PIXEL_MODE, CaptureRequest.HOT_PIXEL_MODE_HIGH_QUALITY)
+                }
+                val stillToneMapModes = camera2Info.getCameraCharacteristic(CameraCharacteristics.TONEMAP_AVAILABLE_TONE_MAP_MODES)
+                if (stillToneMapModes?.contains(CaptureRequest.TONEMAP_MODE_HIGH_QUALITY) == true) {
+                    stillCaptureInterop.setCaptureRequestOption(CaptureRequest.TONEMAP_MODE, CaptureRequest.TONEMAP_MODE_HIGH_QUALITY)
+                }
+
                 if (supportsRawJpeg && rawCaptureEnabled) {
                     captureBuilder.setOutputFormat(ImageCapture.OUTPUT_FORMAT_RAW_JPEG)
                 }
