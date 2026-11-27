@@ -1416,14 +1416,48 @@ private fun CameraPreview(
                         .supportedOutputFormats
                 }.getOrDefault(setOf(ImageCapture.OUTPUT_FORMAT_JPEG))
                 val supportsRawJpeg = supportedFormats.contains(ImageCapture.OUTPUT_FORMAT_RAW_JPEG)
-                val resolutionSelector = ResolutionSelector.Builder()
+                // Redmi 13C stock camera defaults to a binned ~12.5MP 4:3 photo.
+                // Prefer the closest matching JPEG size actually advertised by this device;
+                // do not assume every 50MP sensor exposes the same binned output dimensions.
+                val camera2Info = Camera2CameraInfo.from(cameraProvider.getCameraInfo(selector))
+                val jpegSizes = runCatching {
+                    camera2Info.getCameraCharacteristic(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
+                        ?.getOutputSizes(android.graphics.ImageFormat.JPEG)
+                        ?.toList()
+                        .orEmpty()
+                }.getOrDefault(emptyList())
+                val targetPhotoArea = if (aspectRatioWide) 9_375_000L else 12_500_000L
+                val targetRatio = if (aspectRatioWide) 16f / 9f else 4f / 3f
+                val stockLikePhotoSize = jpegSizes
+                    .filter { kotlin.math.abs(it.width.toFloat() / it.height.toFloat() - targetRatio) < 0.06f }
+                    .minByOrNull { size ->
+                        kotlin.math.abs(size.width.toLong() * size.height.toLong() - targetPhotoArea)
+                    }
+                    ?: jpegSizes.minByOrNull { size ->
+                        kotlin.math.abs(size.width.toLong() * size.height.toLong() - targetPhotoArea)
+                    }
+                val resolutionBuilder = ResolutionSelector.Builder()
                     .setAspectRatioStrategy(
                         if (aspectRatioWide) AspectRatioStrategy.RATIO_16_9_FALLBACK_AUTO_STRATEGY
                         else AspectRatioStrategy.RATIO_4_3_FALLBACK_AUTO_STRATEGY
                     )
-                    .setResolutionStrategy(ResolutionStrategy.HIGHEST_AVAILABLE_STRATEGY)
                     .setAllowedResolutionMode(ResolutionSelector.PREFER_CAPTURE_RATE_OVER_HIGHER_RESOLUTION)
-                    .build()
+                if (stockLikePhotoSize != null) {
+                    resolutionBuilder.setResolutionStrategy(
+                        ResolutionStrategy(
+                            stockLikePhotoSize,
+                            ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER
+                        )
+                    )
+                    android.util.Log.i(
+                        "LumaProCamera",
+                        "Stock-like photo target: ${stockLikePhotoSize.width}x${stockLikePhotoSize.height}"
+                    )
+                } else {
+                    resolutionBuilder.setResolutionStrategy(ResolutionStrategy.HIGHEST_AVAILABLE_STRATEGY)
+                    android.util.Log.w("LumaProCamera", "JPEG output sizes unavailable; using CameraX highest available fallback")
+                }
+                val resolutionSelector = resolutionBuilder.build()
                 val captureBuilder = ImageCapture.Builder()
                     .setResolutionSelector(resolutionSelector)
                     .setCaptureMode(if (maximizeQuality) ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY else ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
