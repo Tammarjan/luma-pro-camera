@@ -301,7 +301,7 @@ private fun LumaCameraScreen() {
             rawDeveloping = true
             cameraScope.launch {
                 val result = withContext(Dispatchers.IO) {
-                    runCatching { developDngToJpeg(context, uri, liveDenoise) }
+                    runCatching { developDngToJpeg(context, uri, liveDenoise, liveBrightness, liveContrast, liveSaturation, liveWarmth, liveTint) }
                 }
                 rawDeveloping = false
                 // The system document picker backgrounds the Activity. Always recreate the
@@ -1464,7 +1464,16 @@ private fun applyChromaNoiseReduction(
     }
 }
 
-private fun developDngToJpeg(context: Context, sourceUri: Uri, denoise: Float = 0.55f) {
+private fun developDngToJpeg(
+    context: Context,
+    sourceUri: Uri,
+    denoise: Float = 0.55f,
+    brightness: Float = 0f,
+    contrast: Float = 0f,
+    saturation: Float = 0f,
+    warmth: Float = 0f,
+    tint: Float = 0f
+) {
     // DNG orientation is stored in TIFF/EXIF metadata. LibRaw's Android bitmap
     // path can return sensor-native orientation, so retain the display rotation.
     val rotationDegrees = runCatching {
@@ -1521,16 +1530,21 @@ private fun developDngToJpeg(context: Context, sourceUri: Uri, denoise: Float = 
     // Keep the source bitmap untouched until the finished bitmap is ready.
     val finishedBitmap = try {
         val output = Bitmap.createBitmap(bitmap.width, bitmap.height, Bitmap.Config.ARGB_8888)
+        val contrastScale = (1.06f + contrast.coerceIn(-1f, 1f) * 0.35f).coerceIn(0.65f, 1.45f)
+        val brightnessOffset = 3f + brightness.coerceIn(-1f, 1f) * 42f
+        val warmthShift = warmth.coerceIn(-1f, 1f) * 18f
+        val tintShift = tint.coerceIn(-1f, 1f) * 14f
         val colorMatrix = android.graphics.ColorMatrix().apply {
-            // Gentle contrast and a small positive lift. The previous negative
-            // offsets were crushing shadow brightness in already dim scenes.
+            // Apply these controls to the saved RAW-developed JPEG as well as preview.
             set(floatArrayOf(
-                1.06f, 0f, 0f, 0f, 3f,
-                0f, 1.06f, 0f, 0f, 3f,
-                0f, 0f, 1.04f, 0f, 3f,
+                contrastScale, 0f, 0f, 0f, brightnessOffset + warmthShift,
+                0f, contrastScale, 0f, 0f, brightnessOffset + tintShift,
+                0f, 0f, contrastScale, 0f, brightnessOffset - warmthShift,
                 0f, 0f, 0f, 1f, 0f
             ))
-            postConcat(android.graphics.ColorMatrix().apply { setSaturation(1.06f) })
+            postConcat(android.graphics.ColorMatrix().apply {
+                setSaturation((1.06f + saturation.coerceIn(-1f, 1f) * 0.45f).coerceIn(0.4f, 1.5f))
+            })
         }
         android.graphics.Canvas(output).drawBitmap(
             bitmap, 0f, 0f,
