@@ -1367,6 +1367,7 @@ private fun developDngToJpeg(context: Context, sourceUri: Uri) {
             // Normalize linear sensor values for a display JPEG and blend clipped highlights.
             raw.setAutoBrightness(true)
             raw.setHighlightMode(2) // Blend highlight channels where possible.
+            raw.setFbddNoiseReduction(1) // Light Bayer-domain denoising before demosaicing.
             val options = BitmapFactory.Options().apply {
                 inPreferredConfig = Bitmap.Config.ARGB_8888
                 inSampleSize = 1
