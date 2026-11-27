@@ -1444,7 +1444,7 @@ private fun developDngToJpeg(context: Context, sourceUri: Uri) {
             raw.setHighlightMode(2) // Blend highlight channels where possible.
             // Full FBDD mode reduces Bayer-domain noise before demosaicing.
             // Keep the later chroma smoothing restrained to avoid washing out colour detail.
-            raw.setFbddNoiseReduction(2).
+            raw.setFbddNoiseReduction(2)
             // AndroidLibRaw 2.0.7 returns a HARDWARE bitmap from decodeBitmap()
             // on Android 10+, which cannot be drawn by our software Canvas finishing pass.
             // Run LibRaw explicitly and request a mutable software bitmap instead.
