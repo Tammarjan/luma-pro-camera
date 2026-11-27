@@ -303,10 +303,10 @@ private fun LumaCameraScreen() {
                     runCatching { developDngToJpeg(context, uri) }
                 }
                 rawDeveloping = false
+                // The system document picker backgrounds the Activity. Always recreate the
+                // CameraX session, including when RAW decoding fails.
+                cameraRestartToken++
                 result.onSuccess {
-                    // The system document picker backgrounds the Activity. Force a clean CameraX
-                    // session rebind after RAW development so the preview surface is recreated.
-                    cameraRestartToken++
                     Toast.makeText(context, "RAW developed: Pictures/Luma Pro Camera", Toast.LENGTH_LONG).show()
                 }.onFailure {
                     android.util.Log.e("LumaProCamera", "RAW development failed", it)
@@ -1375,6 +1375,33 @@ private fun developDngToJpeg(context: Context, sourceUri: Uri) {
         }
     } ?: error("Cannot open selected DNG file")
 
+    // LibRaw's display conversion can look flat on this device. Apply a restrained
+    // finishing pass: modest contrast/saturation and a slight warm-neutral balance.
+    // Keep the source bitmap untouched until the finished bitmap is ready.
+    val finishedBitmap = try {
+        val output = Bitmap.createBitmap(bitmap.width, bitmap.height, Bitmap.Config.ARGB_8888)
+        val colorMatrix = android.graphics.ColorMatrix().apply {
+            set(floatArrayOf(
+                1.10f, 0f, 0f, 0f, -10f,
+                0f, 1.10f, 0f, 0f, -10f,
+                0f, 0f, 1.04f, 0f, -8f,
+                0f, 0f, 0f, 1f, 0f
+            ))
+            postConcat(android.graphics.ColorMatrix().apply { setSaturation(1.06f) })
+        }
+        android.graphics.Canvas(output).drawBitmap(
+            bitmap, 0f, 0f,
+            android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+                colorFilter = android.graphics.ColorMatrixColorFilter(colorMatrix)
+                isFilterBitmap = true
+            }
+        )
+        output
+    } catch (error: Exception) {
+        if (!bitmap.isRecycled) bitmap.recycle()
+        throw error
+    }
+
     try {
         val stamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
         val values = ContentValues().apply {
@@ -1388,7 +1415,7 @@ private fun developDngToJpeg(context: Context, sourceUri: Uri) {
             ?: error("Could not create output JPEG")
         try {
             context.contentResolver.openOutputStream(outputUri, "w")?.use { stream ->
-                check(bitmap.compress(Bitmap.CompressFormat.JPEG, 96, stream)) { "JPEG encoding failed" }
+                check(finishedBitmap.compress(Bitmap.CompressFormat.JPEG, 96, stream)) { "JPEG encoding failed" }
                 stream.flush()
             } ?: error("Could not write output JPEG")
         } catch (error: Exception) {
@@ -1396,6 +1423,7 @@ private fun developDngToJpeg(context: Context, sourceUri: Uri) {
             throw error
         }
     } finally {
+        if (!finishedBitmap.isRecycled) finishedBitmap.recycle()
         if (!bitmap.isRecycled) bitmap.recycle()
     }
 }
