@@ -1368,11 +1368,14 @@ private fun developDngToJpeg(context: Context, sourceUri: Uri) {
             raw.setAutoBrightness(true)
             raw.setHighlightMode(2) // Blend highlight channels where possible.
             raw.setFbddNoiseReduction(1) // Light Bayer-domain denoising before demosaicing.
-            val options = BitmapFactory.Options().apply {
-                inPreferredConfig = Bitmap.Config.ARGB_8888
-                inSampleSize = 1
-            }
-            raw.decodeBitmap(options)
+            // AndroidLibRaw 2.0.7 returns a HARDWARE bitmap from decodeBitmap()
+            // on Android 10+, which cannot be drawn by our software Canvas finishing pass.
+            // Run LibRaw explicitly and request a mutable software bitmap instead.
+            raw.setQuality(3)
+            raw.setHalfSize(false)
+            val processResult = raw.dcrawProcess()
+            check(processResult == 0) { "LibRaw processing failed (code $processResult)" }
+            raw.getMutableBitmap(Bitmap.Config.ARGB_8888)
         }
     } ?: error("Cannot open selected DNG file")
 
