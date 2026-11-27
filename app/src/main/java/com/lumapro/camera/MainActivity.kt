@@ -237,20 +237,20 @@ private fun LumaCameraScreen() {
     var exposureMin by remember { mutableIntStateOf(0) }
     var exposureMax by remember { mutableIntStateOf(0) }
     var exposureIndex by remember { mutableIntStateOf(0) }
-    var liveBrightness by remember { mutableFloatStateOf(0.015f) }
-    var liveContrast by remember { mutableFloatStateOf(0.03f) }
-    var liveSaturation by remember { mutableFloatStateOf(0.02f) }
-    var liveWarmth by remember { mutableFloatStateOf(0.08f) }
-    var liveTint by remember { mutableFloatStateOf(0.10f) }
+    var liveBrightness by remember { mutableFloatStateOf(0f) }
+    var liveContrast by remember { mutableFloatStateOf(0f) }
+    var liveSaturation by remember { mutableFloatStateOf(0f) }
+    var liveWarmth by remember { mutableFloatStateOf(0f) }
+    var liveTint by remember { mutableFloatStateOf(0f) }
     var liveDenoise by remember { mutableFloatStateOf(0f) }
-    var liveSharpening by remember { mutableFloatStateOf(0.10f) }
+    var liveSharpening by remember { mutableFloatStateOf(0f) }
     var liveClarity by remember { mutableFloatStateOf(0f) }
     var liveTexture by remember { mutableFloatStateOf(0f) }
-    var liveHighlights by remember { mutableFloatStateOf(0.12f) }
-    var liveShadows by remember { mutableFloatStateOf(0.10f) }
+    var liveHighlights by remember { mutableFloatStateOf(0f) }
+    var liveShadows by remember { mutableFloatStateOf(0f) }
     var hdrMode by remember { mutableIntStateOf(0) } // 0=off, 1=HDR, 2=HDR+
     val hdrStrength = when (hdrMode) { 1 -> 0.30f; 2 -> 0.55f; else -> 0f }
-    var selectedLiveLook by remember { mutableStateOf("LUMA AUTO") }
+    var selectedLiveLook by remember { mutableStateOf("STANDARD") }
     var zoomRatio by remember { mutableStateOf(1f) }
     var minZoomRatio by remember { mutableStateOf(1f) }
     var maxZoomRatio by remember { mutableStateOf(1f) }
@@ -420,6 +420,7 @@ private fun LumaCameraScreen() {
                 liveHighlights = liveHighlights,
                 liveShadows = liveShadows,
                 hdrStrength = hdrStrength,
+                liveProcessingEnabled = (kotlin.math.abs(liveBrightness) > 0.001f || kotlin.math.abs(liveContrast) > 0.001f || kotlin.math.abs(liveSaturation) > 0.001f || kotlin.math.abs(liveWarmth) > 0.001f || kotlin.math.abs(liveTint) > 0.001f || liveDenoise > 0.001f || liveSharpening > 0.001f || liveClarity > 0.001f || liveTexture > 0.001f || liveHighlights > 0.001f || liveShadows > 0.001f || hdrStrength > 0.001f),
                 jpegQuality = jpegQuality,
                 maximizeQuality = maximizeQuality,
                 rawCaptureEnabled = rawCaptureEnabled,
@@ -1329,6 +1330,7 @@ private fun CameraPreview(
     liveHighlights: Float,
     liveShadows: Float,
     hdrStrength: Float,
+    liveProcessingEnabled: Boolean,
     jpegQuality: Int,
     maximizeQuality: Boolean,
     rawCaptureEnabled: Boolean,
@@ -1374,21 +1376,21 @@ private fun CameraPreview(
         factory = { previewView }
     )
 
-    DisposableEffect(previewView, lifecycleOwner, lensFacing, jpegQuality, maximizeQuality, rawCaptureEnabled, aspectRatioWide, analysisEnabled) {
+    DisposableEffect(previewView, lifecycleOwner, lensFacing, jpegQuality, maximizeQuality, rawCaptureEnabled, aspectRatioWide, analysisEnabled, liveProcessingEnabled) {
         val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
         val executor = ContextCompat.getMainExecutor(context)
         val analysisExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
-        val effectExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
-        val media3Effect = runCatching {
+        val effectExecutor = if (liveProcessingEnabled) java.util.concurrent.Executors.newSingleThreadExecutor() else null
+        val media3Effect = if (liveProcessingEnabled) runCatching {
             Media3Effect(
                 context,
                 CameraEffect.PREVIEW or CameraEffect.VIDEO_CAPTURE or
                     if (rawCaptureEnabled) 0 else CameraEffect.IMAGE_CAPTURE,
-                effectExecutor
+                effectExecutor!!
             ) { error ->
                 android.util.Log.e("LumaProCamera", "Live GPU effect failed", error)
             }.also { it.setEffects(listOf(Brightness(liveBrightness), Contrast(liveContrast), HslAdjustment.Builder().adjustSaturation((liveSaturation * 100f).coerceIn(-100f, 100f)).build(), RgbAdjustment.Builder().setRedScale((1f + liveWarmth * 0.16f + liveTint * 0.07f).coerceIn(0.75f, 1.25f)).setGreenScale((1f - liveTint * 0.12f).coerceIn(0.75f, 1.25f)).setBlueScale((1f - liveWarmth * 0.16f + liveTint * 0.07f).coerceIn(0.75f, 1.25f)).build(), LiveDetailEffect(liveDenoise, liveSharpening, liveClarity, liveTexture, liveHighlights, liveShadows, hdrStrength))) }
-        }.getOrNull()
+        }.getOrNull() else null
         activeMedia3Effect = media3Effect
         val lastAnalysisUpdate = java.util.concurrent.atomic.AtomicLong(0L)
         cameraProviderFuture.addListener({
@@ -1409,7 +1411,7 @@ private fun CameraPreview(
                         else AspectRatioStrategy.RATIO_4_3_FALLBACK_AUTO_STRATEGY
                     )
                     .setResolutionStrategy(ResolutionStrategy.HIGHEST_AVAILABLE_STRATEGY)
-                    .setAllowedResolutionMode(ResolutionSelector.PREFER_HIGHER_RESOLUTION_OVER_CAPTURE_RATE)
+                    .setAllowedResolutionMode(ResolutionSelector.PREFER_CAPTURE_RATE_OVER_HIGHER_RESOLUTION)
                     .build()
                 val captureBuilder = ImageCapture.Builder()
                     .setResolutionSelector(resolutionSelector)
@@ -1521,7 +1523,7 @@ private fun CameraPreview(
             analysisExecutor.shutdown()
             activeMedia3Effect = null
             runCatching { media3Effect?.close() }
-            effectExecutor.shutdown()
+            effectExecutor?.shutdown()
         }
     }
 }
