@@ -700,16 +700,13 @@ private fun LumaCameraScreen() {
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    Text(if (isRecordingVideo) "● REC ${recordingSeconds}s" else if (videoMode) "VIDEO" else "PHOTO", color = Color.White, style = MaterialTheme.typography.labelSmall)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        QuickCameraChip(if (flashEnabled) "FLASH ON" else "FLASH", flashAvailable) {
-                            flashEnabled = !flashEnabled
-                            imageCapture?.flashMode = if (flashEnabled) ImageCapture.FLASH_MODE_ON else ImageCapture.FLASH_MODE_OFF
-                        }
-                        QuickCameraChip(if (aspectRatioWide) "16:9" else "4:3", !isCapturing) { if (!isCapturing) aspectRatioWide = !aspectRatioWide }
-                        QuickCameraChip(if (captureTimerSeconds == 0) "TIMER" else "${captureTimerSeconds}s", !isCapturing) {
-                            captureTimerSeconds = when (captureTimerSeconds) { 0 -> 3; 3 -> 5; 5 -> 10; else -> 0 }
-                        }
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Box(Modifier.size(7.dp).background(if (isRecordingVideo) Color(0xFFFF5252) else Color(0xFFFFD54F), CircleShape))
+                        Text(if (isRecordingVideo) "RECORDING • ${recordingSeconds}s" else if (videoMode) "VIDEO MODE" else "PHOTO MODE",
+                            color = Color.White, style = MaterialTheme.typography.labelSmall, letterSpacing = 1.sp)
+                    }
+                    QuickCameraChip(if (captureTimerSeconds == 0) "TIMER OFF" else "TIMER ${captureTimerSeconds}s", !isCapturing) {
+                        captureTimerSeconds = when (captureTimerSeconds) { 0 -> 3; 3 -> 5; 5 -> 10; else -> 0 }
                     }
                 }
                 Row(Modifier.fillMaxWidth().padding(vertical = 5.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
@@ -725,11 +722,11 @@ private fun LumaCameraScreen() {
                     }
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Surface(modifier = Modifier.clickable(enabled = !isRecordingVideo) { videoMode = false }, color = if (!videoMode) Color.White else Color.Transparent, shape = RoundedCornerShape(14.dp)) {
-                                Text("PHOTO", color = if (!videoMode) Color.Black else Color.LightGray, modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp), style = MaterialTheme.typography.labelMedium)
+                            Surface(modifier = Modifier.clickable(enabled = !isRecordingVideo) { videoMode = false }, color = if (!videoMode) Color(0xFFFFD54F) else Color(0x223A3F48), shape = RoundedCornerShape(14.dp)) {
+                                Text("PHOTO", color = if (!videoMode) Color(0xFF171717) else Color.LightGray, modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp), style = MaterialTheme.typography.labelMedium)
                             }
-                            Surface(modifier = Modifier.clickable(enabled = !isRecordingVideo) { videoMode = true }, color = if (videoMode) Color.White else Color.Transparent, shape = RoundedCornerShape(14.dp)) {
-                                Text("VIDEO", color = if (videoMode) Color.Black else Color.LightGray, modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp), style = MaterialTheme.typography.labelMedium)
+                            Surface(modifier = Modifier.clickable(enabled = !isRecordingVideo) { videoMode = true }, color = if (videoMode) Color(0xFFFFD54F) else Color(0x223A3F48), shape = RoundedCornerShape(14.dp)) {
+                                Text("VIDEO", color = if (videoMode) Color(0xFF171717) else Color.LightGray, modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp), style = MaterialTheme.typography.labelMedium)
                             }
                         }
                         Spacer(Modifier.height(6.dp))
