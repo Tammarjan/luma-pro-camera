@@ -231,6 +231,9 @@ private fun LumaCameraScreen() {
     var jpegQuality by remember { mutableIntStateOf(100) }
     var maximizeQuality by remember { mutableStateOf(true) }
     var aspectRatioWide by remember { mutableStateOf(false) }
+    var fullResolutionEnabled by remember { mutableStateOf(false) }
+    var standardPhotoModeLabel by remember { mutableStateOf<String?>(null) }
+    var fullResolutionModeLabel by remember { mutableStateOf<String?>(null) }
     var timerCountdown by remember { mutableIntStateOf(0) }
     val cameraScope = androidx.compose.runtime.rememberCoroutineScope()
     LaunchedEffect(isRecordingVideo) { if (isRecordingVideo) { recordingSeconds = 0; while (isRecordingVideo) { delay(1000); recordingSeconds += 1 } } else recordingSeconds = 0 }
@@ -426,8 +429,14 @@ private fun LumaCameraScreen() {
                 maximizeQuality = maximizeQuality,
                 rawCaptureEnabled = rawCaptureEnabled,
                 aspectRatioWide = aspectRatioWide,
+                fullResolutionEnabled = fullResolutionEnabled,
                 analysisEnabled = histogramEnabled || zebraEnabled || peakingEnabled,
                 onAnalysis = { bins, clipping, zebras, peaks -> liveHistogram = bins; highlightClipping = clipping; zebraPoints = zebras; peakingPoints = peaks },
+                onPhotoModesChanged = { standardLabel, fullLabel ->
+                    standardPhotoModeLabel = standardLabel
+                    fullResolutionModeLabel = fullLabel
+                    if (fullLabel == null) fullResolutionEnabled = false
+                },
                 onCameraReady = { readyCamera, readyCapture, readyVideoCapture ->
                     camera = readyCamera
                     imageCapture = readyCapture
@@ -891,6 +900,17 @@ private fun LumaCameraScreen() {
                                 }
                             }
                             QuickCameraChip(if (maximizeQuality) "MAXIMUM QUALITY" else "LOW LATENCY", true) { maximizeQuality = !maximizeQuality }
+                            if (standardPhotoModeLabel != null) {
+                                Text("STANDARD PHOTO • $standardPhotoModeLabel", color = Color(0xFFB8BEC8), style = MaterialTheme.typography.bodySmall)
+                            }
+                            if (fullResolutionModeLabel != null) {
+                                QuickCameraChip(if (fullResolutionEnabled) "FULL RESOLUTION ON • $fullResolutionModeLabel" else "FULL RESOLUTION • $fullResolutionModeLabel", !isCapturing) {
+                                    if (!isCapturing) fullResolutionEnabled = !fullResolutionEnabled
+                                }
+                                Text("Uses the largest supported JPEG stream. Capture may take longer and low-light quality can vary.", color = Color(0xFFB8BEC8), style = MaterialTheme.typography.bodySmall)
+                            } else {
+                                Text("Full-resolution mode is not exposed by this camera configuration.", color = Color(0xFFB8BEC8), style = MaterialTheme.typography.bodySmall)
+                            }
                             Text("JPEG QUALITY $jpegQuality%", color = Color.White)
                             Slider(value = jpegQuality.toFloat(), onValueChange = { jpegQuality = it.roundToInt().coerceIn(70, 100) }, valueRange = 70f..100f, steps = 29)
                             if (rawJpegSupported) QuickCameraChip(if (rawCaptureEnabled) "RAW + JPEG ON" else "RAW + JPEG OFF", true) { rawCaptureEnabled = !rawCaptureEnabled }
@@ -1384,8 +1404,10 @@ private fun CameraPreview(
     maximizeQuality: Boolean,
     rawCaptureEnabled: Boolean,
     aspectRatioWide: Boolean,
+    fullResolutionEnabled: Boolean,
     analysisEnabled: Boolean,
     onAnalysis: (List<Float>, Float, List<Offset>, List<Offset>) -> Unit,
+    onPhotoModesChanged: (String?, String?) -> Unit,
     onCameraReady: (Camera?, ImageCapture?, VideoCapture<Recorder>?) -> Unit,
     onTapFocus: () -> Unit,
     onRawCapabilityChanged: (Boolean) -> Unit
@@ -1436,7 +1458,7 @@ private fun CameraPreview(
         factory = { previewView }
     )
 
-    DisposableEffect(previewView, lifecycleOwner, lensFacing, jpegQuality, maximizeQuality, rawCaptureEnabled, aspectRatioWide, analysisEnabled) {
+    DisposableEffect(previewView, lifecycleOwner, lensFacing, jpegQuality, maximizeQuality, rawCaptureEnabled, aspectRatioWide, fullResolutionEnabled, analysisEnabled) {
         val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
         val executor = ContextCompat.getMainExecutor(context)
         val analysisExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
@@ -1477,30 +1499,42 @@ private fun CameraPreview(
                 }.getOrDefault(emptyList())
                 val targetPhotoArea = if (aspectRatioWide) 9_375_000L else 12_500_000L
                 val targetRatio = if (aspectRatioWide) 16f / 9f else 4f / 3f
-                val stockLikePhotoSize = jpegSizes
-                    .filter { kotlin.math.abs(it.width.toFloat() / it.height.toFloat() - targetRatio) < 0.06f }
-                    .minByOrNull { size ->
-                        kotlin.math.abs(size.width.toLong() * size.height.toLong() - targetPhotoArea)
-                    }
-                    ?: jpegSizes.minByOrNull { size ->
-                        kotlin.math.abs(size.width.toLong() * size.height.toLong() - targetPhotoArea)
-                    }
+                val matchingAspectSizes = jpegSizes.filter {
+                    kotlin.math.abs(it.width.toFloat() / it.height.toFloat() - targetRatio) < 0.06f
+                }
+                val stockLikePhotoSize = matchingAspectSizes.minByOrNull { size ->
+                    kotlin.math.abs(size.width.toLong() * size.height.toLong() - targetPhotoArea)
+                } ?: jpegSizes.minByOrNull { size ->
+                    kotlin.math.abs(size.width.toLong() * size.height.toLong() - targetPhotoArea)
+                }
+                val largestPhotoSize = matchingAspectSizes.maxByOrNull { it.width.toLong() * it.height.toLong() }
+                fun formatPhotoSize(size: android.util.Size?): String? = size?.let {
+                    val megapixels = it.width.toLong() * it.height.toLong() / 1_000_000.0
+                    String.format(Locale.US, "%.1fMP · %dx%d", megapixels, it.width, it.height)
+                }
+                onPhotoModesChanged(formatPhotoSize(stockLikePhotoSize), formatPhotoSize(largestPhotoSize?.takeIf {
+                    it.width.toLong() * it.height.toLong() > (stockLikePhotoSize?.width?.toLong() ?: 0L) * (stockLikePhotoSize?.height?.toLong() ?: 0L) * 1.35
+                }))
                 val resolutionBuilder = ResolutionSelector.Builder()
                     .setAspectRatioStrategy(
                         if (aspectRatioWide) AspectRatioStrategy.RATIO_16_9_FALLBACK_AUTO_STRATEGY
                         else AspectRatioStrategy.RATIO_4_3_FALLBACK_AUTO_STRATEGY
                     )
-                    .setAllowedResolutionMode(ResolutionSelector.PREFER_CAPTURE_RATE_OVER_HIGHER_RESOLUTION)
-                if (stockLikePhotoSize != null) {
+                    .setAllowedResolutionMode(
+                        if (fullResolutionEnabled) ResolutionSelector.PREFER_HIGHER_RESOLUTION_OVER_CAPTURE_RATE
+                        else ResolutionSelector.PREFER_CAPTURE_RATE_OVER_HIGHER_RESOLUTION
+                    )
+                val requestedPhotoSize = if (fullResolutionEnabled) largestPhotoSize ?: stockLikePhotoSize else stockLikePhotoSize
+                if (requestedPhotoSize != null) {
                     resolutionBuilder.setResolutionStrategy(
                         ResolutionStrategy(
-                            stockLikePhotoSize,
+                            requestedPhotoSize,
                             ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER
                         )
                     )
                     android.util.Log.i(
                         "LumaProCamera",
-                        "Stock-like photo target: ${stockLikePhotoSize.width}x${stockLikePhotoSize.height}"
+                        "${if (fullResolutionEnabled) "Full-resolution" else "Stock-like"} photo target: ${requestedPhotoSize.width}x${requestedPhotoSize.height}"
                     )
                 } else {
                     resolutionBuilder.setResolutionStrategy(ResolutionStrategy.HIGHEST_AVAILABLE_STRATEGY)
@@ -1648,6 +1682,7 @@ private fun CameraPreview(
             boundCamera = null
             onCameraReady(null, null, null)
             onRawCapabilityChanged(false)
+            onPhotoModesChanged(null, null)
             if (cameraProviderFuture.isDone) {
                 runCatching { cameraProviderFuture.get().unbindAll() }
             }
