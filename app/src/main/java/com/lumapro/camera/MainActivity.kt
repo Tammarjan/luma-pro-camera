@@ -443,6 +443,9 @@ private fun LumaCameraScreen() {
                         exposureMin = range.lower
                         exposureMax = range.upper
                         exposureIndex = 0.coerceIn(range.lower, range.upper)
+                        // Start each camera session from neutral stock-style automatic controls.
+                        // This explicitly clears any stale manual WB/AE locks or exposure bias.
+                        setStockAutoCameraDefaults(readyCamera, range.lower, range.upper)
                         zoomRatio = 1f
                         val zoomState = readyCamera.cameraInfo.zoomState.value
                         minZoomRatio = zoomState?.minZoomRatio ?: 1f
@@ -1189,6 +1192,32 @@ private fun setFocusLock(camera: Camera?, locked: Boolean) {
         }
         Camera2CameraControl.from(activeCamera.cameraControl)
             .setCaptureRequestOptions(builder.build())
+    }
+}
+
+private fun setStockAutoCameraDefaults(camera: Camera, exposureMin: Int, exposureMax: Int) {
+    runCatching {
+        val info = Camera2CameraInfo.from(camera.cameraInfo)
+        val builder = CaptureRequestOptions.Builder()
+            .setCaptureRequestOption(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_ON)
+            .setCaptureRequestOption(CaptureRequest.CONTROL_AWB_MODE, CaptureRequest.CONTROL_AWB_MODE_AUTO)
+            .setCaptureRequestOption(CaptureRequest.CONTROL_AE_LOCK, false)
+            .setCaptureRequestOption(CaptureRequest.CONTROL_AWB_LOCK, false)
+            .setCaptureRequestOption(CaptureRequest.CONTROL_SCENE_MODE, CaptureRequest.CONTROL_SCENE_MODE_DISABLED)
+            .setCaptureRequestOption(CaptureRequest.CONTROL_EFFECT_MODE, CaptureRequest.CONTROL_EFFECT_MODE_OFF)
+
+        val afModes = info.getCameraCharacteristic(CameraCharacteristics.CONTROL_AF_AVAILABLE_MODES)
+        if (afModes?.contains(CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE) == true) {
+            builder.setCaptureRequestOption(
+                CaptureRequest.CONTROL_AF_MODE,
+                CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE
+            )
+        }
+        Camera2CameraControl.from(camera.cameraControl).setCaptureRequestOptions(builder.build())
+        camera.cameraControl.setExposureCompensationIndex(0.coerceIn(exposureMin, exposureMax))
+        android.util.Log.i("LumaProCamera", "Stock-style auto controls applied: AE/AWB auto, EV 0, scene/effect off")
+    }.onFailure {
+        android.util.Log.w("LumaProCamera", "Could not apply all stock-style auto controls", it)
     }
 }
 
