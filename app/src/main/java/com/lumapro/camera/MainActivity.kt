@@ -1354,6 +1354,78 @@ private fun setManualExposure(camera: Camera?, enabled: Boolean, iso: Int, shutt
     }
 }
 
+private fun applyChromaNoiseReduction(
+    source: Bitmap,
+    destination: Bitmap,
+    strength: Float = 0.55f
+) {
+    require(source.width == destination.width && source.height == destination.height)
+    val width = source.width
+    val height = source.height
+    val top = IntArray(width)
+    val middle = IntArray(width)
+    val bottom = IntArray(width)
+    val outputRow = IntArray(width)
+    val amount = strength.coerceIn(0f, 0.8f)
+
+    source.getPixels(middle, 0, width, 0, 0, width, 1)
+    if (height > 1) source.getPixels(bottom, 0, width, 0, 1, width, 1)
+    else System.arraycopy(middle, 0, bottom, 0, width)
+
+    for (y in 0 until height) {
+        if (y > 0) System.arraycopy(middle, 0, top, 0, width)
+        if (y > 0) System.arraycopy(bottom, 0, middle, 0, width)
+        val nextY = (y + 1).coerceAtMost(height - 1)
+        source.getPixels(bottom, 0, width, 0, nextY, width, 1)
+
+        for (x in 0 until width) {
+            val center = middle[x]
+            val a = (center ushr 24) and 0xff
+            val r = (center ushr 16) and 0xff
+            val g = (center ushr 8) and 0xff
+            val b = center and 0xff
+
+            var cbSum = 0f
+            var crSum = 0f
+            var count = 0
+            for (dy in -1..1) {
+                val row = when {
+                    y == 0 && dy < 0 -> middle
+                    y == height - 1 && dy > 0 -> middle
+                    dy < 0 -> top
+                    dy > 0 -> bottom
+                    else -> middle
+                }
+                for (dx in -1..1) {
+                    val nx = (x + dx).coerceIn(0, width - 1)
+                    val pixel = row[nx]
+                    val nr = ((pixel ushr 16) and 0xff).toFloat()
+                    val ng = ((pixel ushr 8) and 0xff).toFloat()
+                    val nb = (pixel and 0xff).toFloat()
+                    cbSum += 128f - 0.168736f * nr - 0.331264f * ng + 0.5f * nb
+                    crSum += 128f + 0.5f * nr - 0.418688f * ng - 0.081312f * nb
+                    count++
+                }
+            }
+
+            val rf = r.toFloat()
+            val gf = g.toFloat()
+            val bf = b.toFloat()
+            val yValue = 0.299f * rf + 0.587f * gf + 0.114f * bf
+            val cb = (128f - 0.168736f * rf - 0.331264f * gf + 0.5f * bf) * (1f - amount) +
+                (cbSum / count) * amount
+            val cr = (128f + 0.5f * rf - 0.418688f * gf - 0.081312f * bf) * (1f - amount) +
+                (crSum / count) * amount
+
+            val outR = (yValue + 1.402f * (cr - 128f)).toInt().coerceIn(0, 255)
+            val outG = (yValue - 0.344136f * (cb - 128f) - 0.714136f * (cr - 128f)).toInt().coerceIn(0, 255)
+            val outB = (yValue + 1.772f * (cb - 128f)).toInt().coerceIn(0, 255)
+            outputRow[x] = (a shl 24) or (outR shl 16) or (outG shl 8) or outB
+        }
+        destination.setPixels(outputRow, 0, width, 0, y, width, 1)
+    }
+}
+
 private fun developDngToJpeg(context: Context, sourceUri: Uri) {
     val bitmap = context.contentResolver.openFileDescriptor(sourceUri, "r")?.use { descriptor ->
         LibRaw().use { raw ->
@@ -1405,6 +1477,9 @@ private fun developDngToJpeg(context: Context, sourceUri: Uri) {
                 isFilterBitmap = true
             }
         )
+        // Smooth chroma speckle while preserving luminance edges and fabric texture.
+        // Row buffers keep peak memory low for this 12MP sensor image.
+        applyChromaNoiseReduction(output, bitmap, strength = 0.55f)
         output
     } catch (error: Exception) {
         if (!bitmap.isRecycled) bitmap.recycle()
