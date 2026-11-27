@@ -76,6 +76,14 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
+import androidx.compose.material3.Icon
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.FlashOff
+import androidx.compose.material.icons.filled.FlashOn
+import androidx.compose.material.icons.filled.PhotoLibrary
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
@@ -153,8 +161,7 @@ private fun LumaCameraScreen() {
     var showGallery by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
     var cameraPanelTab by remember { mutableIntStateOf(0) }
-    var adjustmentPanelOpen by remember { mutableStateOf(true) }
-    var adjustmentTab by remember { mutableIntStateOf(0) }
+    var focusedAdjustment by remember { mutableStateOf<String?>(null) }
     var galleryPhotos by remember { mutableStateOf<List<GalleryPhoto>>(emptyList()) }
     var selectedPhoto by remember { mutableStateOf<GalleryPhoto?>(null) }
     var selectedPhotoUris by remember { mutableStateOf<Set<String>>(emptySet()) }
@@ -527,124 +534,153 @@ private fun LumaCameraScreen() {
             }
         }
 
-        // Preview-first translucent live adjustment panel
-        if (hasPermission && adjustmentPanelOpen) {
+        // Focused single-control adjustment: settings disappear, live viewfinder stays visible.
+        val focusedKey = focusedAdjustment
+        if (hasPermission && focusedKey != null) {
+            val focusLabel = when (focusedKey) {
+                "brightness" -> "Brightness"
+                "contrast" -> "Contrast"
+                "saturation" -> "Saturation"
+                "warmth" -> "Warmth"
+                "tint" -> "Tint"
+                "denoise" -> "Denoise"
+                "sharpening" -> "Sharpening"
+                "clarity" -> "Clarity"
+                "texture" -> "Texture"
+                "highlights" -> "Highlights"
+                else -> "Shadows"
+            }
+            val focusValue = when (focusedKey) {
+                "brightness" -> liveBrightness
+                "contrast" -> liveContrast
+                "saturation" -> liveSaturation
+                "warmth" -> liveWarmth
+                "tint" -> liveTint
+                "denoise" -> liveDenoise
+                "sharpening" -> liveSharpening
+                "clarity" -> liveClarity
+                "texture" -> liveTexture
+                "highlights" -> liveHighlights
+                else -> liveShadows
+            }
+            val isSigned = focusedKey in setOf("brightness", "contrast", "saturation", "warmth", "tint")
             Column(
                 modifier = Modifier.align(Alignment.BottomCenter)
                     .fillMaxWidth()
-                    .padding(start = 14.dp, end = 14.dp, bottom = 176.dp)
-                    .background(Color(0xCC171717), RoundedCornerShape(22.dp))
-                    .padding(horizontal = 14.dp, vertical = 10.dp)
+                    .padding(start = 18.dp, end = 18.dp, bottom = 178.dp)
+                    .background(Color(0xE9161920), RoundedCornerShape(24.dp))
+                    .padding(horizontal = 20.dp, vertical = 16.dp)
             ) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                        listOf("LIGHT", "COLOR", "DETAIL", "HDR").forEachIndexed { index, label ->
-                            Surface(
-                                modifier = Modifier.weight(1f).clickable { adjustmentTab = index },
-                                color = if (adjustmentTab == index) Color(0xFFFFD21F) else Color(0x55333333),
-                                shape = RoundedCornerShape(18.dp)
-                            ) {
-                                Text(label, color = if (adjustmentTab == index) Color.Black else Color.White,
-                                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 9.dp),
-                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                                    style = MaterialTheme.typography.labelSmall)
-                            }
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(focusLabel.uppercase(Locale.US), color = Color.White,
+                            style = MaterialTheme.typography.titleSmall)
+                        Text(
+                            if (isSigned) String.format(Locale.US, "%+.0f%%", focusValue * 100f)
+                            else "${(focusValue * 100f).roundToInt()}%",
+                            color = Color(0xFFFFD54F), style = MaterialTheme.typography.headlineSmall
+                        )
+                    }
+                    Surface(
+                        modifier = Modifier.size(42.dp).clickable { focusedAdjustment = null },
+                        color = Color(0xFF30343D), shape = CircleShape
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(Icons.Filled.Close, contentDescription = "Close adjustment", tint = Color.White)
                         }
                     }
-                    Text("×", color = Color.White, modifier = Modifier.padding(start = 10.dp)
-                        .clickable { adjustmentPanelOpen = false }, style = MaterialTheme.typography.headlineSmall)
                 }
-                Spacer(Modifier.height(9.dp))
-                val adjustLabel = when (adjustmentTab) {
-                    0 -> "Brightness"
-                    1 -> "Saturation"
-                    2 -> "Sharpening"
-                    else -> "HDR Strength"
-                }
-                val adjustValue = when (adjustmentTab) {
-                    0 -> liveBrightness
-                    1 -> liveSaturation
-                    2 -> liveSharpening
-                    else -> hdrStrength
-                }
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text(adjustLabel, color = Color.White, style = MaterialTheme.typography.titleSmall)
-                    Text(if (adjustmentTab == 3) if (hdrMode == 2) "HDR+" else if (hdrMode == 1) "HDR" else "OFF" else "${(adjustValue * 100).roundToInt()}%",
-                        color = Color.White, style = MaterialTheme.typography.titleSmall)
-                }
-                if (adjustmentTab == 3) {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        QuickCameraChip("OFF", true, hdrMode == 0) { hdrMode = 0 }
-                        QuickCameraChip("HDR", true, hdrMode == 1) { hdrMode = 1 }
-                        QuickCameraChip("HDR+", true, hdrMode == 2) { hdrMode = 2 }
-                    }
-                } else {
-                    Slider(
-                        value = adjustValue,
-                        onValueChange = {
-                            when (adjustmentTab) {
-                                0 -> liveBrightness = it
-                                1 -> liveSaturation = it
-                                2 -> liveSharpening = it
-                            }
-                        },
-                        valueRange = if (adjustmentTab == 2) 0f..1f else -1f..1f
-                    )
-                }
+                Slider(
+                    value = focusValue,
+                    onValueChange = { v ->
+                        when (focusedKey) {
+                            "brightness" -> liveBrightness = v
+                            "contrast" -> liveContrast = v
+                            "saturation" -> liveSaturation = v
+                            "warmth" -> liveWarmth = v
+                            "tint" -> liveTint = v
+                            "denoise" -> liveDenoise = v
+                            "sharpening" -> liveSharpening = v
+                            "clarity" -> liveClarity = v
+                            "texture" -> liveTexture = v
+                            "highlights" -> liveHighlights = v
+                            "shadows" -> liveShadows = v
+                        }
+                    },
+                    valueRange = if (isSigned) -1f..1f else 0f..1f
+                )
+                Text("Drag to adjust • Live preview updates instantly",
+                    color = Color(0xFFB8BEC8), style = MaterialTheme.typography.labelSmall)
             }
-        } else if (hasPermission) {
-            Surface(
-                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 176.dp)
-                    .clickable { adjustmentPanelOpen = true },
-                color = Color(0xCC171717), shape = RoundedCornerShape(22.dp)
+        }
+
+        // Modern floating camera toolbar
+        if (hasPermission) {
+            Row(
+                modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth()
+                    .background(Color(0xA6101218))
+                    .padding(start = 18.dp, end = 14.dp, top = 12.dp, bottom = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Text("☼  ADJUST LIVE", color = Color.White,
-                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp))
-            }
-        }
-
-        // Compact professional top bar
-        if (hasPermission) Row(
-            modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth()
-                .background(Color(0xB8000000)).padding(horizontal = 16.dp, vertical = 10.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column {
-                Text("LUMA", color = Color.White, style = MaterialTheme.typography.titleMedium)
-                Text("PRO CAMERA", color = Color(0xFFBDBDBD), style = MaterialTheme.typography.labelSmall)
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Surface(color = Color(0x66333333), shape = RoundedCornerShape(18.dp)) {
-                    Text(if (rawCaptureEnabled && rawJpegSupported) "RAW" else if (videoMode) "VIDEO" else "JPEG",
-                        color = Color.White, modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
-                        style = MaterialTheme.typography.labelSmall)
+                Column {
+                    Text("LUMA", color = Color.White, style = MaterialTheme.typography.titleLarge,
+                        letterSpacing = androidx.compose.ui.unit.sp(2f))
+                    Text("PRO CAMERA", color = Color(0xFFB7BDC8), style = MaterialTheme.typography.labelSmall,
+                        letterSpacing = androidx.compose.ui.unit.sp(1.5f))
                 }
-                Surface(
-                    modifier = Modifier.clickable { showGallery = true },
-                    color = Color(0x88333333), shape = RoundedCornerShape(18.dp)
-                ) { Text("GALLERY", color = Color.White, modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp), style = MaterialTheme.typography.labelSmall) }
-                Surface(
-                    modifier = Modifier.clickable { showSettings = true },
-                    color = Color(0x88333333), shape = CircleShape
-                ) { Text("⚙", color = Color.White, modifier = Modifier.padding(horizontal = 13.dp, vertical = 6.dp), style = MaterialTheme.typography.titleMedium) }
-            }
-        }
-
-        // Small quick-access strip, kept away from the viewfinder center
-        if (hasPermission) Row(
-            modifier = Modifier.align(Alignment.TopCenter).padding(top = 66.dp)
-                .background(Color(0x66000000), RoundedCornerShape(22.dp)).padding(horizontal = 8.dp, vertical = 5.dp),
-            horizontalArrangement = Arrangement.spacedBy(7.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            QuickCameraChip(if (flashEnabled) "FLASH ON" else "FLASH", flashAvailable) {
-                flashEnabled = !flashEnabled
-                imageCapture?.flashMode = if (flashEnabled) ImageCapture.FLASH_MODE_ON else ImageCapture.FLASH_MODE_OFF
-            }
-            QuickCameraChip(if (aspectRatioWide) "16:9" else "4:3", !isCapturing) { if (!isCapturing) aspectRatioWide = !aspectRatioWide }
-            QuickCameraChip(if (captureTimerSeconds == 0) "TIMER" else "${captureTimerSeconds}s", !isCapturing) {
-                captureTimerSeconds = when (captureTimerSeconds) { 0 -> 3; 3 -> 5; 5 -> 10; else -> 0 }
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                    Surface(
+                        modifier = Modifier.height(40.dp).clickable {
+                            hdrMode = when (hdrMode) { 0 -> 1; 1 -> 2; else -> 0 }
+                        },
+                        color = if (hdrMode == 0) Color(0x553A3E46) else Color(0xFFFFD54F),
+                        shape = RoundedCornerShape(14.dp)
+                    ) {
+                        Box(Modifier.padding(horizontal = 13.dp), contentAlignment = Alignment.Center) {
+                            Text(when (hdrMode) { 0 -> "HDR OFF"; 1 -> "HDR"; else -> "HDR+" },
+                                color = if (hdrMode == 0) Color.White else Color(0xFF141414),
+                                style = MaterialTheme.typography.labelLarge)
+                        }
+                    }
+                    Surface(
+                        modifier = Modifier.height(40.dp).clickable { if (!isCapturing) aspectRatioWide = !aspectRatioWide },
+                        color = Color(0x553A3E46), shape = RoundedCornerShape(14.dp)
+                    ) {
+                        Box(Modifier.padding(horizontal = 11.dp), contentAlignment = Alignment.Center) {
+                            Text(if (aspectRatioWide) "16:9" else "4:3", color = Color.White,
+                                style = MaterialTheme.typography.labelMedium)
+                        }
+                    }
+                    Surface(
+                        modifier = Modifier.size(40.dp).clickable {
+                            flashEnabled = !flashEnabled
+                            imageCapture?.flashMode = if (flashEnabled) ImageCapture.FLASH_MODE_ON else ImageCapture.FLASH_MODE_OFF
+                        },
+                        color = Color(0x553A3E46), shape = CircleShape
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(if (flashEnabled) Icons.Filled.FlashOn else Icons.Filled.FlashOff,
+                                contentDescription = "Flash", tint = if (flashEnabled) Color(0xFFFFD54F) else Color.White)
+                        }
+                    }
+                    Surface(
+                        modifier = Modifier.size(40.dp).clickable { showGallery = true },
+                        color = Color(0x553A3E46), shape = CircleShape
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(Icons.Filled.PhotoLibrary, contentDescription = "Gallery", tint = Color.White)
+                        }
+                    }
+                    Surface(
+                        modifier = Modifier.size(40.dp).clickable { showSettings = true },
+                        color = Color(0x553A3E46), shape = CircleShape
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(Icons.Filled.Settings, contentDescription = "Settings", tint = Color.White)
+                        }
+                    }
+                }
             }
         }
 
@@ -652,8 +688,8 @@ private fun LumaCameraScreen() {
         if (hasPermission) {
             Column(
                 modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth()
-                    .background(Color(0xE6101010), RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp))
-                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                    .background(Color(0xEA101319), RoundedCornerShape(topStart = 30.dp, topEnd = 30.dp))
+                    .padding(horizontal = 18.dp, vertical = 13.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
@@ -751,14 +787,14 @@ private fun LumaCameraScreen() {
             Dialog(onDismissRequest = { showSettings = false }) {
                 Column(
                     modifier = Modifier.fillMaxWidth().heightIn(max = 720.dp)
-                        .background(Color(0xFF151515), RoundedCornerShape(24.dp))
+                        .background(Color(0xFF12151B), RoundedCornerShape(26.dp))
                         .padding(16.dp).verticalScroll(rememberScrollState())
                 ) {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                        Text("Camera Settings", color = Color.White, style = MaterialTheme.typography.titleLarge)
+                        Text("Settings", color = Color.White, style = MaterialTheme.typography.headlineSmall)
                         QuickCameraChip("DONE", true) { showSettings = false }
                     }
-                    Text("Standard mode keeps all image adjustments neutral.", color = Color.LightGray, style = MaterialTheme.typography.bodySmall)
+                    Text("Fine-tune the live camera. Pick any image control to open its focused preview adjustment.", color = Color(0xFFB8BEC8), style = MaterialTheme.typography.bodySmall)
                     Spacer(Modifier.height(10.dp))
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         listOf("IMAGE", "PRO", "TOOLS").forEachIndexed { index, label ->
@@ -771,8 +807,13 @@ private fun LumaCameraScreen() {
                     Spacer(Modifier.height(10.dp))
                     when (cameraPanelTab) {
                         0 -> {
-                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text("IMAGE ADJUSTMENTS", color = Color.White)
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically) {
+                                Column {
+                                    Text("IMAGE TUNING", color = Color.White, style = MaterialTheme.typography.titleMedium)
+                                    Text("Choose a control to adjust it over the live viewfinder",
+                                        color = Color(0xFFB8BEC8), style = MaterialTheme.typography.bodySmall)
+                                }
                                 QuickCameraChip("RESET", true) {
                                     liveBrightness = 0f; liveContrast = 0f; liveSaturation = 0f
                                     liveWarmth = 0f; liveTint = 0f; liveDenoise = 0f
@@ -781,54 +822,55 @@ private fun LumaCameraScreen() {
                                     selectedLiveLook = "STANDARD"
                                 }
                             }
-                            Text("EFFECT TESTS • Tap one to compare against the normal preview", color = Color(0xFFFFD54F), style = MaterialTheme.typography.labelSmall)
-                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                QuickCameraChip(if (liveDenoise > 0.95f) "DENOISE ✓" else "TEST DENOISE", true, liveDenoise > 0.95f) {
-                                    liveDenoise = if (liveDenoise > 0.95f) 0f else 1f
-                                    liveClarity = 0f; liveTexture = 0f; liveSharpening = 0f
-                                }
-                                QuickCameraChip(if (liveClarity > 0.95f) "CLARITY ✓" else "TEST CLARITY", true, liveClarity > 0.95f) {
-                                    liveClarity = if (liveClarity > 0.95f) 0f else 1f
-                                    liveDenoise = 0f; liveTexture = 0f; liveSharpening = 0f
-                                }
-                                QuickCameraChip(if (liveTexture > 0.95f) "TEXTURE ✓" else "TEST TEXTURE", true, liveTexture > 0.95f) {
-                                    liveTexture = if (liveTexture > 0.95f) 0f else 1f
-                                    liveDenoise = 0f; liveClarity = 0f; liveSharpening = 0f
-                                }
+                            Spacer(Modifier.height(12.dp))
+                            AdjustmentSettingRow("Brightness", "Exposure look", String.format(Locale.US, "%+.0f%%", liveBrightness * 100f)) {
+                                focusedAdjustment = "brightness"; showSettings = false
                             }
-                            Text("Brightness ${(liveBrightness * 100).roundToInt()}%", color = Color.White)
-                            Slider(value = liveBrightness, onValueChange = { liveBrightness = it }, valueRange = -1f..1f)
-                            Text("Contrast ${(liveContrast * 100).roundToInt()}%", color = Color.White)
-                            Slider(value = liveContrast, onValueChange = { liveContrast = it }, valueRange = -1f..1f)
-                            Text("Saturation ${(liveSaturation * 100).roundToInt()}%", color = Color.White)
-                            Slider(value = liveSaturation, onValueChange = { liveSaturation = it }, valueRange = -1f..1f)
-                            Text("Warmth ${(liveWarmth * 100).roundToInt()}%", color = Color.White)
-                            Slider(value = liveWarmth, onValueChange = { liveWarmth = it }, valueRange = -1f..1f)
-                            Text("Tint ${(liveTint * 100).roundToInt()}%", color = Color.White)
-                            Slider(value = liveTint, onValueChange = { liveTint = it }, valueRange = -1f..1f)
-                            Text("Denoise ${(liveDenoise * 100).roundToInt()}%", color = Color.White)
-                            Slider(value = liveDenoise, onValueChange = { liveDenoise = it }, valueRange = 0f..1f)
-                            Text("Sharpening ${(liveSharpening * 100).roundToInt()}%", color = Color.White)
-                            Slider(value = liveSharpening, onValueChange = { liveSharpening = it }, valueRange = 0f..1f)
-                            Text("Clarity ${(liveClarity * 100).roundToInt()}%", color = Color.White)
-                            Slider(value = liveClarity, onValueChange = { liveClarity = it }, valueRange = 0f..1f)
-                            Text("Texture ${(liveTexture * 100).roundToInt()}%", color = Color.White)
-                            Slider(value = liveTexture, onValueChange = { liveTexture = it }, valueRange = 0f..1f)
-                            Text("LIVE HDR TONE", color = Color(0xFFFFD54F))
-                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                QuickCameraChip("OFF", true, hdrMode == 0) { hdrMode = 0 }
-                                QuickCameraChip("HDR", true, hdrMode == 1) { hdrMode = 1 }
-                                QuickCameraChip("HDR+", true, hdrMode == 2) { hdrMode = 2 }
+                            AdjustmentSettingRow("Contrast", "Deepen or soften tonal range", String.format(Locale.US, "%+.0f%%", liveContrast * 100f)) {
+                                focusedAdjustment = "contrast"; showSettings = false
                             }
-                            Text("Highlights ${(liveHighlights * 100).roundToInt()}%", color = Color.White)
-                            Slider(value = liveHighlights, onValueChange = { liveHighlights = it }, valueRange = 0f..1f)
-                            Text("Shadows ${(liveShadows * 100).roundToInt()}%", color = Color.White)
-                            Slider(value = liveShadows, onValueChange = { liveShadows = it }, valueRange = 0f..1f)
+                            AdjustmentSettingRow("Saturation", "Color intensity", String.format(Locale.US, "%+.0f%%", liveSaturation * 100f)) {
+                                focusedAdjustment = "saturation"; showSettings = false
+                            }
+                            AdjustmentSettingRow("Warmth", "Cool to warm color balance", String.format(Locale.US, "%+.0f%%", liveWarmth * 100f)) {
+                                focusedAdjustment = "warmth"; showSettings = false
+                            }
+                            AdjustmentSettingRow("Tint", "Green to magenta balance", String.format(Locale.US, "%+.0f%%", liveTint * 100f)) {
+                                focusedAdjustment = "tint"; showSettings = false
+                            }
+                            AdjustmentSettingRow("Denoise", "Reduce image noise", "${(liveDenoise * 100f).roundToInt()}%") {
+                                focusedAdjustment = "denoise"; showSettings = false
+                            }
+                            AdjustmentSettingRow("Sharpening", "Enhance edge definition", "${(liveSharpening * 100f).roundToInt()}%") {
+                                focusedAdjustment = "sharpening"; showSettings = false
+                            }
+                            AdjustmentSettingRow("Clarity", "Local contrast", "${(liveClarity * 100f).roundToInt()}%") {
+                                focusedAdjustment = "clarity"; showSettings = false
+                            }
+                            AdjustmentSettingRow("Texture", "Fine detail intensity", "${(liveTexture * 100f).roundToInt()}%") {
+                                focusedAdjustment = "texture"; showSettings = false
+                            }
+                            AdjustmentSettingRow("Highlights", "Recover bright areas", "${(liveHighlights * 100f).roundToInt()}%") {
+                                focusedAdjustment = "highlights"; showSettings = false
+                            }
+                            AdjustmentSettingRow("Shadows", "Lift dark areas", "${(liveShadows * 100f).roundToInt()}%") {
+                                focusedAdjustment = "shadows"; showSettings = false
+                            }
+                            Spacer(Modifier.height(10.dp))
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Button(onClick = { importConfigLauncher.launch(arrayOf("application/json", "text/json", "*/*")) }, modifier = Modifier.weight(1f)) { Text("IMPORT CONFIG") }
-                                Button(onClick = { exportConfigLauncher.launch("LumaCamera-${selectedLiveLook.replace(' ', '-')}.json") }, modifier = Modifier.weight(1f)) { Text("EXPORT CONFIG") }
+                                Button(onClick = { importConfigLauncher.launch(arrayOf("application/json", "text/json", "*/*")) },
+                                    modifier = Modifier.weight(1f),
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF303640), contentColor = Color.White)) {
+                                    Text("IMPORT PRESET")
+                                }
+                                Button(onClick = { exportConfigLauncher.launch("LumaCamera-${selectedLiveLook.replace(' ', '-')}.json") },
+                                    modifier = Modifier.weight(1f),
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFD54F), contentColor = Color(0xFF171717))) {
+                                    Text("SAVE PRESET")
+                                }
                             }
-                            Text("HDR/HDR+ are single-frame live tone mapping, not multi-frame computational HDR. RAW remains unprocessed.", color = Color.LightGray, style = MaterialTheme.typography.bodySmall)
+                            Text("HDR mode is controlled from the HDR button on the camera screen: OFF → HDR → HDR+.",
+                                color = Color(0xFFB8BEC8), style = MaterialTheme.typography.bodySmall)
                         }
                         1 -> {
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -995,6 +1037,34 @@ private fun LumaCameraScreen() {
 }
 
 
+
+@Composable
+private fun AdjustmentSettingRow(
+    title: String,
+    subtitle: String,
+    value: String,
+    onClick: () -> Unit
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
+        color = Color(0xFF20252E),
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 15.dp, vertical = 13.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(title, color = Color.White, style = MaterialTheme.typography.titleSmall)
+                Text(subtitle, color = Color(0xFFADB5C2), style = MaterialTheme.typography.bodySmall)
+            }
+            Text(value, color = Color(0xFFFFD54F), style = MaterialTheme.typography.titleSmall)
+            Spacer(Modifier.size(8.dp))
+            Icon(Icons.Filled.ChevronRight, contentDescription = "Adjust $title", tint = Color(0xFFADB5C2))
+        }
+    }
+    Spacer(Modifier.height(8.dp))
+}
 
 @Composable
 private fun QuickCameraChip(label: String, enabled: Boolean = true, selected: Boolean = false, onClick: () -> Unit) {
