@@ -301,7 +301,7 @@ private fun LumaCameraScreen() {
             rawDeveloping = true
             cameraScope.launch {
                 val result = withContext(Dispatchers.IO) {
-                    runCatching { developDngToJpeg(context, uri, liveDenoise, liveBrightness, liveContrast, liveSaturation, liveWarmth, liveTint) }
+                    runCatching { developDngToJpeg(context, uri, liveDenoise, liveBrightness, liveContrast, liveSaturation, liveWarmth, liveTint, liveSharpening, liveClarity, liveTexture, liveHighlights, liveShadows) }
                 }
                 rawDeveloping = false
                 // The system document picker backgrounds the Activity. Always recreate the
@@ -1359,7 +1359,12 @@ private fun setManualExposure(camera: Camera?, enabled: Boolean, iso: Int, shutt
 private fun applyChromaNoiseReduction(
     source: Bitmap,
     destination: Bitmap,
-    strength: Float = 0.55f
+    strength: Float = 0.55f,
+    sharpening: Float = 0f,
+    clarity: Float = 0f,
+    texture: Float = 0f,
+    highlights: Float = 0f,
+    shadows: Float = 0f
 ) {
     require(source.width == destination.width && source.height == destination.height)
     require(source !== destination) { "Chroma filter requires separate source and destination bitmaps" }
@@ -1446,7 +1451,28 @@ private fun applyChromaNoiseReduction(
                 lumaSum += bottomLuma
                 lumaWeight += 1f
             }
-            val filteredLuma = centerLuma + ((lumaSum / lumaWeight) - centerLuma) * lumaAmount
+            var filteredLuma = centerLuma + ((lumaSum / lumaWeight) - centerLuma) * lumaAmount
+
+            // Apply saved-photo detail controls in the RAW development pass.
+            // This lightweight edge-aware local contrast avoids allocating a
+            // second full-resolution pixel buffer on memory-limited phones.
+            val localAverage = (leftLuma + rightLuma + topLuma + bottomLuma) * 0.25f
+            val edgeDetail = centerLuma - localAverage
+            val detailAmount = (sharpening.coerceIn(0f, 1f) * 0.55f +
+                texture.coerceIn(0f, 1f) * 0.38f +
+                clarity.coerceIn(0f, 1f) * 0.28f).coerceAtMost(0.9f)
+            filteredLuma += edgeDetail * detailAmount
+
+            // Single-frame shadow/highlight shaping; cannot recover clipped sensor data.
+            val normalizedLuma = (filteredLuma / 255f).coerceIn(0f, 1f)
+            val shadowMask = 1f - ((normalizedLuma - 0.10f) / 0.62f).coerceIn(0f, 1f)
+            val highlightMask = ((normalizedLuma - 0.28f) / 0.64f).coerceIn(0f, 1f)
+            val shadowLift = shadowMask * shadows.coerceIn(0f, 1f) * 0.30f
+            val highlightPull = highlightMask * highlights.coerceIn(0f, 1f) * 0.28f
+            val mappedLuma = (normalizedLuma + shadowLift * (1f - normalizedLuma) -
+                highlightPull * normalizedLuma).coerceIn(0f, 1f)
+            val toneRatio = mappedLuma / normalizedLuma.coerceAtLeast(0.035f)
+            filteredLuma = (filteredLuma * toneRatio.coerceIn(0.55f, 1.55f)).coerceIn(0f, 255f)
 
             val outRed = (filteredLuma + 1.402f * (cr - 128f)).toInt().coerceIn(0, 255)
             val outGreen = (filteredLuma - 0.344136f * (cb - 128f) - 0.714136f * (cr - 128f)).toInt().coerceIn(0, 255)
@@ -1472,7 +1498,12 @@ private fun developDngToJpeg(
     contrast: Float = 0f,
     saturation: Float = 0f,
     warmth: Float = 0f,
-    tint: Float = 0f
+    tint: Float = 0f,
+    sharpening: Float = 0f,
+    clarity: Float = 0f,
+    texture: Float = 0f,
+    highlights: Float = 0f,
+    shadows: Float = 0f
 ) {
     // DNG orientation is stored in TIFF/EXIF metadata. LibRaw's Android bitmap
     // path can return sensor-native orientation, so retain the display rotation.
@@ -1555,7 +1586,15 @@ private fun developDngToJpeg(
         )
         // Smooth chroma speckle while preserving luminance edges and fabric texture.
         // Row buffers keep peak memory low for this 12MP sensor image.
-        applyChromaNoiseReduction(output, bitmap, strength = denoise.coerceIn(0f, 1f).let { 0.35f + it * 0.45f })
+        applyChromaNoiseReduction(
+            output, bitmap,
+            strength = denoise.coerceIn(0f, 1f).let { 0.35f + it * 0.45f },
+            sharpening = sharpening,
+            clarity = clarity,
+            texture = texture,
+            highlights = highlights,
+            shadows = shadows
+        )
         // The denoiser writes its result into bitmap (the destination). Return
         // that destination; returning output here would silently discard the
         // denoising pass even though its CPU work had completed.
