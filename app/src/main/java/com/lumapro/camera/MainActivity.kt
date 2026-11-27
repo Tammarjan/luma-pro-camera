@@ -279,6 +279,7 @@ private fun LumaCameraScreen() {
     var rawJpegSupported by remember { mutableStateOf(false) }
     var rawCaptureEnabled by remember { mutableStateOf(false) }
     var rawDeveloping by remember { mutableStateOf(false) }
+    var cameraRestartToken by remember { mutableIntStateOf(0) }
     var manualSensorSupported by remember { mutableStateOf(false) }
     var manualExposureEnabled by remember { mutableStateOf(false) }
     var isoMin by remember { mutableIntStateOf(100) }
@@ -303,6 +304,9 @@ private fun LumaCameraScreen() {
                 }
                 rawDeveloping = false
                 result.onSuccess {
+                    // The system document picker backgrounds the Activity. Force a clean CameraX
+                    // session rebind after RAW development so the preview surface is recreated.
+                    cameraRestartToken++
                     Toast.makeText(context, "RAW developed: Pictures/Luma Pro Camera", Toast.LENGTH_LONG).show()
                 }.onFailure {
                     android.util.Log.e("LumaProCamera", "RAW development failed", it)
@@ -435,6 +439,7 @@ private fun LumaCameraScreen() {
             CameraPreview(
                 modifier = Modifier.fillMaxSize(),
                 lensFacing = lensFacing,
+                cameraRestartToken = cameraRestartToken,
                 liveBrightness = liveBrightness,
                 liveContrast = liveContrast,
                 liveSaturation = liveSaturation,
@@ -1469,6 +1474,7 @@ private fun capturePhoto(
 private fun CameraPreview(
     modifier: Modifier = Modifier,
     lensFacing: Int,
+    cameraRestartToken: Int,
     liveBrightness: Float,
     liveContrast: Float,
     liveSaturation: Float,
@@ -1541,7 +1547,7 @@ private fun CameraPreview(
         factory = { previewView }
     )
 
-    DisposableEffect(previewView, lifecycleOwner, lensFacing, jpegQuality, maximizeQuality, rawCaptureEnabled, aspectRatioWide, fullResolutionEnabled, analysisEnabled) {
+    DisposableEffect(previewView, lifecycleOwner, lensFacing, cameraRestartToken, jpegQuality, maximizeQuality, rawCaptureEnabled, aspectRatioWide, fullResolutionEnabled, analysisEnabled) {
         val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
         val executor = ContextCompat.getMainExecutor(context)
         val analysisExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
