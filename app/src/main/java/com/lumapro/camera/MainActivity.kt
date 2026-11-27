@@ -1372,15 +1372,24 @@ private fun applyChromaNoiseReduction(
     val outputRow = IntArray(width)
     val verticalCb = FloatArray(width)
     val verticalCr = FloatArray(width)
-    val amount = strength.coerceIn(0f, 0.8f)
+    val chromaAmount = strength.coerceIn(0f, 0.8f)
+    // Adaptive luminance denoising: smooths small sensor fluctuations in flat
+    // regions, but rejects neighbours across strong edges to retain fabric detail.
+    val lumaAmount = 0.38f
+    val lumaThreshold = 26f
+
+    fun luminance(pixel: Int): Float {
+        val red = ((pixel ushr 16) and 0xff).toFloat()
+        val green = ((pixel ushr 8) and 0xff).toFloat()
+        val blue = (pixel and 0xff).toFloat()
+        return 0.299f * red + 0.587f * green + 0.114f * blue
+    }
 
     source.getPixels(top, 0, width, 0, 0, width, 1)
     System.arraycopy(top, 0, middle, 0, width)
     source.getPixels(bottom, 0, width, 0, minOf(1, height - 1), width, 1)
 
     for (y in 0 until height) {
-        // Build one vertical 3-pixel chroma sum. This avoids recalculating
-        // RGB-to-chroma conversion nine times for every output pixel.
         for (x in 0 until width) {
             val p0 = top[x]
             val p1 = middle[x]
@@ -1404,16 +1413,33 @@ private fun applyChromaNoiseReduction(
             val right = (x + 1).coerceAtMost(width - 1)
             val smoothCb = (verticalCb[left] + verticalCb[x] + verticalCb[right]) / 9f
             val smoothCr = (verticalCr[left] + verticalCr[x] + verticalCr[right]) / 9f
-
             val centerCb = 128f - 0.168736f * red - 0.331264f * green + 0.5f * blue
             val centerCr = 128f + 0.5f * red - 0.418688f * green - 0.081312f * blue
-            val cb = centerCb + (smoothCb - centerCb) * amount
-            val cr = centerCr + (smoothCr - centerCr) * amount
-            val luma = 0.299f * red + 0.587f * green + 0.114f * blue
+            val cb = centerCb + (smoothCb - centerCb) * chromaAmount
+            val cr = centerCr + (smoothCr - centerCr) * chromaAmount
 
-            val outRed = (luma + 1.402f * (cr - 128f)).toInt().coerceIn(0, 255)
-            val outGreen = (luma - 0.344136f * (cb - 128f) - 0.714136f * (cr - 128f)).toInt().coerceIn(0, 255)
-            val outBlue = (luma + 1.772f * (cb - 128f)).toInt().coerceIn(0, 255)
+            // Cross-shaped edge-aware luma filter. Neighbours are only blended
+            // when their brightness is close enough to the centre pixel.
+            val centerLuma = 0.299f * red + 0.587f * green + 0.114f * blue
+            var lumaSum = centerLuma * 2f
+            var lumaWeight = 2f
+            val neighbourLumas = floatArrayOf(
+                luminance(middle[left]),
+                luminance(middle[right]),
+                luminance(top[x]),
+                luminance(bottom[x])
+            )
+            for (neighbourLuma in neighbourLumas) {
+                if (kotlin.math.abs(neighbourLuma - centerLuma) <= lumaThreshold) {
+                    lumaSum += neighbourLuma
+                    lumaWeight += 1f
+                }
+            }
+            val filteredLuma = centerLuma + ((lumaSum / lumaWeight) - centerLuma) * lumaAmount
+
+            val outRed = (filteredLuma + 1.402f * (cr - 128f)).toInt().coerceIn(0, 255)
+            val outGreen = (filteredLuma - 0.344136f * (cb - 128f) - 0.714136f * (cr - 128f)).toInt().coerceIn(0, 255)
+            val outBlue = (filteredLuma + 1.772f * (cb - 128f)).toInt().coerceIn(0, 255)
             outputRow[x] = (alpha shl 24) or (outRed shl 16) or (outGreen shl 8) or outBlue
         }
 
