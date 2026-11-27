@@ -27,12 +27,12 @@ void main() {
   // Bilateral denoise: wider sampling footprint with luminance edge protection.
   vec3 neighbours = vec3(0.0);
   float weightSum = 0.0;
-  for (int y = -2; y <= 2; y++) {
-    for (int x = -2; x <= 2; x++) {
+  for (int y = -1; y <= 1; y++) {
+    for (int x = -1; x <= 1; x++) {
       if (x == 0 && y == 0) continue;
       vec2 offset = vec2(float(x), float(y));
       vec3 sampleColor = sampleAt(uv, offset);
-      float spatial = exp(-dot(offset, offset) * 0.22);
+      float spatial = exp(-dot(offset, offset) * 0.42);
       float rangeWeight = exp(-abs(luma(sampleColor) - y0) * 10.0);
       float weight = spatial * rangeWeight;
       neighbours += sampleColor * weight;
