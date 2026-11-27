@@ -54,5 +54,5 @@ dependencies {
     implementation("androidx.camera.media3:media3-effect:1.0.0-alpha04")
     implementation("androidx.media3:media3-effect:1.7.1")
     implementation("io.coil-kt:coil-compose:2.7.0")
-    implementation("com.github.dburckh:AndroidLibRaw:2.0.5")
+    implementation("com.github.dburckh:AndroidLibRaw:2.0.7")
 }
