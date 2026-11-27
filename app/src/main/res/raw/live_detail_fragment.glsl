@@ -22,65 +22,77 @@ vec3 sampleAt(vec2 uv, vec2 offset) {
 void main() {
   vec2 uv = vTexSamplingCoord;
   vec3 center = texture2D(uTexSampler, uv).rgb;
-
-  // Edge-aware 8-neighbour denoise. Strong enough to be visible at 100,
-  // while reducing cross-edge smearing compared with a plain box blur.
-  vec3 n1 = sampleAt(uv, vec2(-1.0, 0.0));
-  vec3 n2 = sampleAt(uv, vec2( 1.0, 0.0));
-  vec3 n3 = sampleAt(uv, vec2(0.0, -1.0));
-  vec3 n4 = sampleAt(uv, vec2(0.0,  1.0));
-  vec3 n5 = sampleAt(uv, vec2(-1.0, -1.0));
-  vec3 n6 = sampleAt(uv, vec2( 1.0, -1.0));
-  vec3 n7 = sampleAt(uv, vec2(-1.0,  1.0));
-  vec3 n8 = sampleAt(uv, vec2( 1.0,  1.0));
-
   float y0 = luma(center);
-  float w1 = exp(-abs(luma(n1)-y0)*18.0);
-  float w2 = exp(-abs(luma(n2)-y0)*18.0);
-  float w3 = exp(-abs(luma(n3)-y0)*18.0);
-  float w4 = exp(-abs(luma(n4)-y0)*18.0);
-  float w5 = exp(-abs(luma(n5)-y0)*18.0)*0.7071;
-  float w6 = exp(-abs(luma(n6)-y0)*18.0)*0.7071;
-  float w7 = exp(-abs(luma(n7)-y0)*18.0)*0.7071;
-  float w8 = exp(-abs(luma(n8)-y0)*18.0)*0.7071;
-  vec3 sum = center*1.5 + n1*w1+n2*w2+n3*w3+n4*w4+n5*w5+n6*w6+n7*w7+n8*w8;
-  float total = 1.5+w1+w2+w3+w4+w5+w6+w7+w8;
-  vec3 denoised = sum / max(total, 0.0001);
 
-  // Fine detail and local contrast at different spatial scales.
-  vec3 nearBlur = (n1+n2+n3+n4)*0.25;
-  vec3 fineDetail = center-nearBlur;
-  vec3 f1 = sampleAt(uv, vec2(-3.0, 0.0));
-  vec3 f2 = sampleAt(uv, vec2( 3.0, 0.0));
-  vec3 f3 = sampleAt(uv, vec2(0.0, -3.0));
-  vec3 f4 = sampleAt(uv, vec2(0.0,  3.0));
-  vec3 midBlur = (f1+f2+f3+f4)*0.25;
-  vec3 localDetail = center-midBlur;
-
+  // Bilateral denoise: wider sampling footprint with luminance edge protection.
+  vec3 neighbours = vec3(0.0);
+  float weightSum = 0.0;
+  for (int y = -2; y <= 2; y++) {
+    for (int x = -2; x <= 2; x++) {
+      if (x == 0 && y == 0) continue;
+      vec2 offset = vec2(float(x), float(y));
+      vec3 sampleColor = sampleAt(uv, offset);
+      float spatial = exp(-dot(offset, offset) * 0.22);
+      float rangeWeight = exp(-abs(luma(sampleColor) - y0) * 10.0);
+      float weight = spatial * rangeWeight;
+      neighbours += sampleColor * weight;
+      weightSum += weight;
+    }
+  }
+  vec3 denoised = (center * 0.30 + neighbours) / max(0.30 + weightSum, 0.0001);
   float denoiseAmount = clamp(uDenoise, 0.0, 1.0);
+  vec3 result = mix(center, denoised, denoiseAmount * 0.98);
+
+  // Multi-scale detail: fine sharpening, medium texture and broader clarity.
+  vec3 nearBlur = (
+    sampleAt(uv, vec2(-1.5, 0.0)) +
+    sampleAt(uv, vec2( 1.5, 0.0)) +
+    sampleAt(uv, vec2(0.0, -1.5)) +
+    sampleAt(uv, vec2(0.0,  1.5))
+  ) * 0.25;
+  vec3 midBlur = (
+    sampleAt(uv, vec2(-3.5, 0.0)) +
+    sampleAt(uv, vec2( 3.5, 0.0)) +
+    sampleAt(uv, vec2(0.0, -3.5)) +
+    sampleAt(uv, vec2(0.0,  3.5))
+  ) * 0.25;
+  vec3 broadBlur = (
+    sampleAt(uv, vec2(-7.0, 0.0)) +
+    sampleAt(uv, vec2( 7.0, 0.0)) +
+    sampleAt(uv, vec2(0.0, -7.0)) +
+    sampleAt(uv, vec2(0.0,  7.0))
+  ) * 0.25;
+
   float sharpenAmount = clamp(uSharpen, 0.0, 1.0);
   float clarityAmount = clamp(uClarity, 0.0, 1.0);
   float textureAmount = clamp(uTexture, 0.0, 1.0);
+  vec3 fineDetail = result - nearBlur;
+  vec3 mediumDetail = result - midBlur;
+  vec3 broadDetail = result - broadBlur;
 
-  vec3 result = mix(center, denoised, denoiseAmount*0.95);
-  result += fineDetail * sharpenAmount * 2.2;
-  result += localDetail * clarityAmount * 2.8;
-  result += fineDetail * textureAmount * 3.0;
+  // Apply detail primarily to luminance to reduce coloured edge halos.
+  float fineY = luma(fineDetail);
+  float mediumY = luma(mediumDetail);
+  float broadY = luma(broadDetail);
+  float edgeMask = smoothstep(0.008, 0.075, abs(fineY));
+  float textureMask = smoothstep(0.004, 0.045, abs(mediumY));
+  float clarityMask = smoothstep(0.012, 0.12, abs(broadY));
+  result += vec3(fineY) * sharpenAmount * 3.8 * edgeMask;
+  result += vec3(mediumY) * textureAmount * 2.8 * textureMask;
+  result += vec3(broadY) * clarityAmount * 2.5 * clarityMask;
 
-  // Gentle, chroma-preserving single-frame tone mapping.
-  // This cannot recreate clipped highlights; it only compresses values still
-  // present in the sensor preview while lifting deep shadows conservatively.
-  float resultLuma = luma(max(result, vec3(0.0)));
-  float hdr = clamp(uHdrStrength, 0.0, 1.0);
-  float shadowMask = pow(1.0 - smoothstep(0.04, 0.58, resultLuma), 1.7);
-  float highlightMask = pow(smoothstep(0.48, 0.98, resultLuma), 1.8);
-  float shadowLift = clamp(uShadows, 0.0, 1.0) * 0.12 + hdr * 0.075;
-  float highlightPull = clamp(uHighlights, 0.0, 1.0) * 0.16 + hdr * 0.16;
-  float mappedLuma = resultLuma + shadowMask * shadowLift;
-  mappedLuma = mappedLuma - highlightMask * highlightPull;
-  mappedLuma = max(mappedLuma, 0.0);
-  float toneRatio = clamp(mappedLuma / max(resultLuma, 0.04), 0.78, 1.28);
-  result *= toneRatio;
+  // Stronger but controlled shadow/highlight shaping. These are single-frame
+  // tone controls; they cannot restore sensor detail that was clipped away.
+  float currentY = clamp(luma(max(result, vec3(0.0))), 0.0, 1.0);
+  float shadowMask = 1.0 - smoothstep(0.10, 0.72, currentY);
+  float highlightMask = smoothstep(0.28, 0.92, currentY);
+  float shadowStrength = clamp(uShadows, 0.0, 1.0) * 0.34 + clamp(uHdrStrength, 0.0, 1.0) * 0.12;
+  float highlightStrength = clamp(uHighlights, 0.0, 1.0) * 0.38 + clamp(uHdrStrength, 0.0, 1.0) * 0.20;
+  float mappedY = currentY + shadowMask * shadowStrength * (1.0 - currentY);
+  mappedY = mappedY - highlightMask * highlightStrength * currentY;
+  mappedY = clamp(mappedY, 0.0, 1.0);
+  float ratio = mappedY / max(currentY, 0.035);
+  result *= clamp(ratio, 0.52, 1.65);
 
   gl_FragColor = vec4(clamp(result, 0.0, 1.0), 1.0);
 }
