@@ -1357,9 +1357,8 @@ private fun developDngToJpeg(context: Context, sourceUri: Uri) {
             raw.setQuality(3)
             raw.setCameraWhiteBalance(true)
             raw.setUseCameraMatrix(LibRaw.USE_CAMERA_MATRIX_DEFAULT)
-            raw.setOutputColorSpace(LibRaw.COLORSPACE_SRGB)
+            raw.setOutputColorSpace(1) // LibRaw COLORSPACE_SRGB
             raw.setOutputBps(8)
-            raw.setFbddNoiseReduction(1)
             raw.setAutoBrightness(false)
             val options = BitmapFactory.Options().apply {
                 inPreferredConfig = Bitmap.Config.ARGB_8888
