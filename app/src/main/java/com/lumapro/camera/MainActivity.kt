@@ -19,6 +19,7 @@ import android.os.ParcelFileDescriptor
 import android.provider.MediaStore
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.exifinterface.media.ExifInterface
 import android.view.KeyEvent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -1427,6 +1428,13 @@ private fun applyChromaNoiseReduction(
 }
 
 private fun developDngToJpeg(context: Context, sourceUri: Uri) {
+    // DNG orientation is stored in TIFF/EXIF metadata. LibRaw's Android bitmap
+    // path can return sensor-native orientation, so retain the display rotation.
+    val rotationDegrees = runCatching {
+        context.contentResolver.openInputStream(sourceUri)?.use { input ->
+            ExifInterface(input).rotationDegrees
+        } ?: 0
+    }.getOrDefault(0)
     val bitmap = context.contentResolver.openFileDescriptor(sourceUri, "r")?.use { descriptor ->
         LibRaw().use { raw ->
             // AndroidLibRaw's native openFd() wraps the supplied FD with fdopen()
@@ -1446,10 +1454,11 @@ private fun developDngToJpeg(context: Context, sourceUri: Uri) {
             raw.setUseCameraMatrix(LibRaw.USE_CAMERA_MATRIX_DEFAULT)
             raw.setOutputColorSpace(LibRaw.COLORSPACE_SRGB)
             raw.setOutputBps(8)
-            // Use one controlled RAW exposure lift instead of stacking LibRaw's
-            // histogram auto-brightness on top of exposure correction.
-            raw.setAutoBrightness(false)
-            raw.setExposureCorrectionBeforeDemosaic(true, 1.45f, 0.80f)
+            // Let LibRaw map the sensor-linear RAW data into a usable display range.
+            // Keep a modest pre-demosaic lift and highlight preservation; disabling
+            // auto-brightness was the main reason developed frames stayed too dark.
+            raw.setAutoBrightness(true)
+            raw.setExposureCorrectionBeforeDemosaic(true, 1.45f, 0.85f)
             raw.setHighlightMode(2)
             raw.setFbddNoiseReduction(2)
             // AndroidLibRaw 2.0.7 returns a HARDWARE bitmap from decodeBitmap()
@@ -1498,6 +1507,17 @@ private fun developDngToJpeg(context: Context, sourceUri: Uri) {
         throw error
     }
 
+    val orientedBitmap = if (rotationDegrees != 0) {
+        val matrix = android.graphics.Matrix().apply { postRotate(rotationDegrees.toFloat()) }
+        Bitmap.createBitmap(
+            finishedBitmap, 0, 0, finishedBitmap.width, finishedBitmap.height, matrix, true
+        ).also { rotated ->
+            if (rotated !== finishedBitmap && !finishedBitmap.isRecycled) finishedBitmap.recycle()
+        }
+    } else {
+        finishedBitmap
+    }
+
     try {
         val stamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
         val values = ContentValues().apply {
@@ -1511,7 +1531,7 @@ private fun developDngToJpeg(context: Context, sourceUri: Uri) {
             ?: error("Could not create output JPEG")
         try {
             context.contentResolver.openOutputStream(outputUri, "w")?.use { stream ->
-                check(finishedBitmap.compress(Bitmap.CompressFormat.JPEG, 96, stream)) { "JPEG encoding failed" }
+                check(orientedBitmap.compress(Bitmap.CompressFormat.JPEG, 96, stream)) { "JPEG encoding failed" }
                 stream.flush()
             } ?: error("Could not write output JPEG")
         } catch (error: Exception) {
@@ -1519,6 +1539,7 @@ private fun developDngToJpeg(context: Context, sourceUri: Uri) {
             throw error
         }
     } finally {
+        if (!orientedBitmap.isRecycled) orientedBitmap.recycle()
         if (!finishedBitmap.isRecycled) finishedBitmap.recycle()
         if (!bitmap.isRecycled) bitmap.recycle()
     }
