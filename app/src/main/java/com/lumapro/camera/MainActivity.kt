@@ -1725,7 +1725,8 @@ private fun CameraPreview(
         onDispose {
             boundCamera = null
             onCameraReady(null, null, null)
-            onRawCapabilityChanged(false)
+            // Do not clear RAW support during a rebind: toggling RAW itself disposes this effect,
+            // and clearing the capability here immediately turns the user toggle back off.
             onPhotoModesChanged(null, null)
             onHardwareInfoChanged("Camera diagnostics unavailable while camera is closed.")
             if (cameraProviderFuture.isDone) {
