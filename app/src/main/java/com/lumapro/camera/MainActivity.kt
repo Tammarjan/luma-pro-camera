@@ -1364,9 +1364,10 @@ private fun developDngToJpeg(context: Context, sourceUri: Uri) {
             raw.setUseCameraMatrix(LibRaw.USE_CAMERA_MATRIX_DEFAULT)
             raw.setOutputColorSpace(1) // LibRaw COLORSPACE_SRGB
             raw.setOutputBps(8)
-            // Let LibRaw normalize the linear sensor data for a normal display JPEG.
-            // The previous disabled setting left this Redmi sample visibly underexposed.
+            // Normalize linear sensor values for a display JPEG and blend clipped highlights.
             raw.setAutoBrightness(true)
+            raw.setHighlightMode(2) // Blend highlight channels where possible.
+            raw.setFbddNoiseReduction(1) // Light Bayer-domain noise reduction.
             val options = BitmapFactory.Options().apply {
                 inPreferredConfig = Bitmap.Config.ARGB_8888
                 inSampleSize = 1
