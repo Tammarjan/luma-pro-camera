@@ -1516,14 +1516,14 @@ private fun CameraPreview(
                         val raw = caps.contains(CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_RAW)
                         val manual = caps.contains(CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_MANUAL_SENSOR)
                         buildString {
-                            append("Camera ID: ${info.cameraId}\\n")
-                            append("Sensor pixel array: ${pixelArray?.let { "${it.width}×${it.height}" } ?: "Not reported"}\\n")
-                            append("Active array: ${activeArray?.let { "${it.width()}×${it.height()}" } ?: "Not reported"}\\n")
-                            append("Sensor physical size: ${physicalSize?.let { String.format(Locale.US, "%.2f×%.2f mm", it.width, it.height) } ?: "Not reported"}\\n")
-                            append("JPEG streams (largest first): $maxSizes\\n")
+                            append("Camera ID: ${info.cameraId}\n")
+                            append("Sensor pixel array: ${pixelArray?.let { "${it.width}×${it.height}" } ?: "Not reported"}\n")
+                            append("Active array: ${activeArray?.let { "${it.width()}×${it.height()}" } ?: "Not reported"}\n")
+                            append("Sensor physical size: ${physicalSize?.let { String.format(Locale.US, "%.2f×%.2f mm", it.width, it.height) } ?: "Not reported"}\n")
+                            append("JPEG streams (largest first): $maxSizes\n")
                             append("RAW: ${if (raw) "supported" else "not advertised"} • Manual sensor: ${if (manual) "supported" else "not advertised"}")
                         }
-                    }.joinToString("\\n\\n").ifBlank { "No rear camera characteristics exposed." }
+                    }.joinToString("\n\n").ifBlank { "No rear camera characteristics exposed." }
                 }.getOrElse { "Could not read camera characteristics: ${it.javaClass.simpleName}" }
                 onHardwareInfoChanged(hardwareReport)
                 val jpegSizes = runCatching {
