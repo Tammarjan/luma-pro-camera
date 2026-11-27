@@ -234,6 +234,7 @@ private fun LumaCameraScreen() {
     var fullResolutionEnabled by remember { mutableStateOf(false) }
     var standardPhotoModeLabel by remember { mutableStateOf<String?>(null) }
     var fullResolutionModeLabel by remember { mutableStateOf<String?>(null) }
+    var hardwareDiagnosticReport by remember { mutableStateOf("Reading camera hardware…") }
     var timerCountdown by remember { mutableIntStateOf(0) }
     val cameraScope = androidx.compose.runtime.rememberCoroutineScope()
     LaunchedEffect(isRecordingVideo) { if (isRecordingVideo) { recordingSeconds = 0; while (isRecordingVideo) { delay(1000); recordingSeconds += 1 } } else recordingSeconds = 0 }
@@ -432,6 +433,7 @@ private fun LumaCameraScreen() {
                 fullResolutionEnabled = fullResolutionEnabled,
                 analysisEnabled = histogramEnabled || zebraEnabled || peakingEnabled,
                 onAnalysis = { bins, clipping, zebras, peaks -> liveHistogram = bins; highlightClipping = clipping; zebraPoints = zebras; peakingPoints = peaks },
+                onHardwareInfoChanged = { report -> hardwareDiagnosticReport = report },
                 onPhotoModesChanged = { standardLabel, fullLabel ->
                     standardPhotoModeLabel = standardLabel
                     fullResolutionModeLabel = fullLabel
@@ -900,6 +902,8 @@ private fun LumaCameraScreen() {
                                 }
                             }
                             QuickCameraChip(if (maximizeQuality) "MAXIMUM QUALITY" else "LOW LATENCY", true) { maximizeQuality = !maximizeQuality }
+                            Text("CAMERA HARDWARE DIAGNOSTICS", color = Color.White, style = MaterialTheme.typography.titleSmall)
+                            Text(hardwareDiagnosticReport, color = Color(0xFFB8BEC8), style = MaterialTheme.typography.bodySmall)
                             if (standardPhotoModeLabel != null) {
                                 Text("STANDARD PHOTO • $standardPhotoModeLabel", color = Color(0xFFB8BEC8), style = MaterialTheme.typography.bodySmall)
                             }
@@ -1408,6 +1412,7 @@ private fun CameraPreview(
     analysisEnabled: Boolean,
     onAnalysis: (List<Float>, Float, List<Offset>, List<Offset>) -> Unit,
     onPhotoModesChanged: (String?, String?) -> Unit,
+    onHardwareInfoChanged: (String) -> Unit,
     onCameraReady: (Camera?, ImageCapture?, VideoCapture<Recorder>?) -> Unit,
     onTapFocus: () -> Unit,
     onRawCapabilityChanged: (Boolean) -> Unit
@@ -1491,6 +1496,36 @@ private fun CameraPreview(
                 // Prefer the closest matching JPEG size actually advertised by this device;
                 // do not assume every 50MP sensor exposes the same binned output dimensions.
                 val camera2Info = Camera2CameraInfo.from(cameraProvider.getCameraInfo(selector))
+                val hardwareReport = runCatching {
+                    cameraProvider.availableCameraInfos.mapNotNull { cameraInfo ->
+                        val info = Camera2CameraInfo.from(cameraInfo)
+                        val facing = info.getCameraCharacteristic(CameraCharacteristics.LENS_FACING)
+                        if (facing != CameraCharacteristics.LENS_FACING_BACK) return@mapNotNull null
+                        val pixelArray = info.getCameraCharacteristic(CameraCharacteristics.SENSOR_INFO_PIXEL_ARRAY_SIZE)
+                        val activeArray = info.getCameraCharacteristic(CameraCharacteristics.SENSOR_INFO_ACTIVE_ARRAY_SIZE)
+                        val physicalSize = info.getCameraCharacteristic(CameraCharacteristics.SENSOR_INFO_PHYSICAL_SIZE)
+                        val map = info.getCameraCharacteristic(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
+                        val sizes = map?.getOutputSizes(android.graphics.ImageFormat.JPEG)?.toList().orEmpty()
+                            .sortedByDescending { it.width.toLong() * it.height.toLong() }
+                        val maxSizes = sizes.take(5).joinToString { size ->
+                            val mp = size.width.toLong() * size.height.toLong() / 1_000_000.0
+                            String.format(Locale.US, "%.1fMP (%dx%d)", mp, size.width, size.height)
+                        }.ifBlank { "JPEG sizes unavailable" }
+                        val caps = info.getCameraCharacteristic(CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES)
+                            ?.toSet().orEmpty()
+                        val raw = caps.contains(CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_RAW)
+                        val manual = caps.contains(CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_MANUAL_SENSOR)
+                        buildString {
+                            append("Camera ID: ${info.cameraId}\\n")
+                            append("Sensor pixel array: ${pixelArray?.let { "${it.width}×${it.height}" } ?: "Not reported"}\\n")
+                            append("Active array: ${activeArray?.let { "${it.width()}×${it.height()}" } ?: "Not reported"}\\n")
+                            append("Sensor physical size: ${physicalSize?.let { String.format(Locale.US, "%.2f×%.2f mm", it.width, it.height) } ?: "Not reported"}\\n")
+                            append("JPEG streams (largest first): $maxSizes\\n")
+                            append("RAW: ${if (raw) "supported" else "not advertised"} • Manual sensor: ${if (manual) "supported" else "not advertised"}")
+                        }
+                    }.joinToString("\\n\\n").ifBlank { "No rear camera characteristics exposed." }
+                }.getOrElse { "Could not read camera characteristics: ${it.javaClass.simpleName}" }
+                onHardwareInfoChanged(hardwareReport)
                 val jpegSizes = runCatching {
                     camera2Info.getCameraCharacteristic(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
                         ?.getOutputSizes(android.graphics.ImageFormat.JPEG)
@@ -1683,6 +1718,7 @@ private fun CameraPreview(
             onCameraReady(null, null, null)
             onRawCapabilityChanged(false)
             onPhotoModesChanged(null, null)
+            onHardwareInfoChanged("Camera diagnostics unavailable while camera is closed.")
             if (cameraProviderFuture.isDone) {
                 runCatching { cameraProviderFuture.get().unbindAll() }
             }
