@@ -1442,7 +1442,9 @@ private fun developDngToJpeg(context: Context, sourceUri: Uri) {
             // preserving bright areas; avoid a large lift that would clip highlights.
             raw.setExposureCorrectionBeforeDemosaic(true, 1.18f, 0.65f)
             raw.setHighlightMode(2) // Blend highlight channels where possible.
-            raw.setFbddNoiseReduction(1) // Light Bayer-domain denoising before demosaicing.
+            // Full FBDD mode reduces Bayer-domain noise before demosaicing.
+            // Keep the later chroma smoothing restrained to avoid washing out colour detail.
+            raw.setFbddNoiseReduction(2).
             // AndroidLibRaw 2.0.7 returns a HARDWARE bitmap from decodeBitmap()
             // on Android 10+, which cannot be drawn by our software Canvas finishing pass.
             // Run LibRaw explicitly and request a mutable software bitmap instead.
