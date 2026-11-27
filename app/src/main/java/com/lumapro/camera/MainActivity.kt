@@ -87,6 +87,7 @@ import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -112,6 +113,7 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.core.content.ContextCompat
@@ -607,7 +609,12 @@ private fun LumaCameraScreen() {
                             "shadows" -> liveShadows = v
                         }
                     },
-                    valueRange = if (isSigned) -1f..1f else 0f..1f
+                    valueRange = if (isSigned) -1f..1f else 0f..1f,
+                    colors = SliderDefaults.colors(
+                        thumbColor = Color(0xFFFFD54F),
+                        activeTrackColor = Color(0xFFFFD54F),
+                        inactiveTrackColor = Color(0xFF555D68)
+                    )
                 )
                 Text("Drag to adjust • Live preview updates instantly",
                     color = Color(0xFFB8BEC8), style = MaterialTheme.typography.labelSmall)
@@ -625,9 +632,9 @@ private fun LumaCameraScreen() {
             ) {
                 Column {
                     Text("LUMA", color = Color.White, style = MaterialTheme.typography.titleLarge,
-                        letterSpacing = androidx.compose.ui.unit.sp(2f))
+                        letterSpacing = 2.sp)
                     Text("PRO CAMERA", color = Color(0xFFB7BDC8), style = MaterialTheme.typography.labelSmall,
-                        letterSpacing = androidx.compose.ui.unit.sp(1.5f))
+                        letterSpacing = 1.5.sp)
                 }
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                     Surface(
