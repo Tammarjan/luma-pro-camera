@@ -1488,8 +1488,11 @@ private fun developDngToJpeg(context: Context, sourceUri: Uri) {
         // Smooth chroma speckle while preserving luminance edges and fabric texture.
         // Row buffers keep peak memory low for this 12MP sensor image.
         applyChromaNoiseReduction(output, bitmap, strength = 0.55f)
-        if (!output.isRecycled) output.recycle()
-        bitmap
+        // Return the processed output, not the untouched LibRaw bitmap.
+        // Previously the finishing bitmap was recycled and the original was returned,
+        // silently discarding contrast, saturation, and chroma-noise reduction.
+        if (!bitmap.isRecycled) bitmap.recycle()
+        output
     } catch (error: Exception) {
         if (!bitmap.isRecycled) bitmap.recycle()
         throw error
