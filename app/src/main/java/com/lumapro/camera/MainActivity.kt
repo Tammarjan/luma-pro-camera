@@ -1206,6 +1206,25 @@ private fun setStockAutoCameraDefaults(camera: Camera, exposureMin: Int, exposur
             .setCaptureRequestOption(CaptureRequest.CONTROL_SCENE_MODE, CaptureRequest.CONTROL_SCENE_MODE_DISABLED)
             .setCaptureRequestOption(CaptureRequest.CONTROL_EFFECT_MODE, CaptureRequest.CONTROL_EFFECT_MODE_OFF)
 
+        // Request the camera HAL's own high-quality still-image ISP paths when supported.
+        // This preserves sensor-native processing instead of adding artificial GPU sharpening.
+        val edgeModes = info.getCameraCharacteristic(CameraCharacteristics.EDGE_AVAILABLE_EDGE_MODES)
+        if (edgeModes?.contains(CaptureRequest.EDGE_MODE_HIGH_QUALITY) == true) {
+            builder.setCaptureRequestOption(CaptureRequest.EDGE_MODE, CaptureRequest.EDGE_MODE_HIGH_QUALITY)
+        }
+        val noiseModes = info.getCameraCharacteristic(CameraCharacteristics.NOISE_REDUCTION_AVAILABLE_NOISE_REDUCTION_MODES)
+        if (noiseModes?.contains(CaptureRequest.NOISE_REDUCTION_MODE_HIGH_QUALITY) == true) {
+            builder.setCaptureRequestOption(CaptureRequest.NOISE_REDUCTION_MODE, CaptureRequest.NOISE_REDUCTION_MODE_HIGH_QUALITY)
+        }
+        val hotPixelModes = info.getCameraCharacteristic(CameraCharacteristics.HOT_PIXEL_AVAILABLE_HOT_PIXEL_MODES)
+        if (hotPixelModes?.contains(CaptureRequest.HOT_PIXEL_MODE_HIGH_QUALITY) == true) {
+            builder.setCaptureRequestOption(CaptureRequest.HOT_PIXEL_MODE, CaptureRequest.HOT_PIXEL_MODE_HIGH_QUALITY)
+        }
+        val toneMapModes = info.getCameraCharacteristic(CameraCharacteristics.TONEMAP_AVAILABLE_TONE_MAP_MODES)
+        if (toneMapModes?.contains(CaptureRequest.TONEMAP_MODE_HIGH_QUALITY) == true) {
+            builder.setCaptureRequestOption(CaptureRequest.TONEMAP_MODE, CaptureRequest.TONEMAP_MODE_HIGH_QUALITY)
+        }
+
         val afModes = info.getCameraCharacteristic(CameraCharacteristics.CONTROL_AF_AVAILABLE_MODES)
         if (afModes?.contains(CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE) == true) {
             builder.setCaptureRequestOption(
@@ -1215,7 +1234,7 @@ private fun setStockAutoCameraDefaults(camera: Camera, exposureMin: Int, exposur
         }
         Camera2CameraControl.from(camera.cameraControl).setCaptureRequestOptions(builder.build())
         camera.cameraControl.setExposureCompensationIndex(0.coerceIn(exposureMin, exposureMax))
-        android.util.Log.i("LumaProCamera", "Stock-style auto controls applied: AE/AWB auto, EV 0, scene/effect off")
+        android.util.Log.i("LumaProCamera", "Stock-style auto controls applied: AE/AWB auto, EV 0, supported high-quality ISP modes requested")
     }.onFailure {
         android.util.Log.w("LumaProCamera", "Could not apply all stock-style auto controls", it)
     }
