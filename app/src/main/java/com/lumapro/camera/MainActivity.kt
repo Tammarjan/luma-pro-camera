@@ -1464,7 +1464,7 @@ private fun applyChromaNoiseReduction(
     }
 }
 
-private fun developDngToJpeg(context: Context, sourceUri: Uri) {
+private fun developDngToJpeg(context: Context, sourceUri: Uri, denoise: Float = 0.55f) {
     // DNG orientation is stored in TIFF/EXIF metadata. LibRaw's Android bitmap
     // path can return sensor-native orientation, so retain the display rotation.
     val rotationDegrees = runCatching {
@@ -1541,7 +1541,7 @@ private fun developDngToJpeg(context: Context, sourceUri: Uri) {
         )
         // Smooth chroma speckle while preserving luminance edges and fabric texture.
         // Row buffers keep peak memory low for this 12MP sensor image.
-        applyChromaNoiseReduction(output, bitmap, strength = 0.55f)
+        applyChromaNoiseReduction(output, bitmap, strength = denoise.coerceIn(0f, 1f).let { 0.35f + it * 0.45f })
         // Return the processed output, not the untouched LibRaw bitmap.
         // Previously the finishing bitmap was recycled and the original was returned,
         // silently discarding contrast, saturation, and chroma-noise reduction.
