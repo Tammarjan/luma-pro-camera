@@ -1497,33 +1497,42 @@ private fun CameraPreview(
                 // do not assume every 50MP sensor exposes the same binned output dimensions.
                 val camera2Info = Camera2CameraInfo.from(cameraProvider.getCameraInfo(selector))
                 val hardwareReport = runCatching {
-                    cameraProvider.availableCameraInfos.mapNotNull { cameraInfo ->
-                        val info = Camera2CameraInfo.from(cameraInfo)
-                        val facing = info.getCameraCharacteristic(CameraCharacteristics.LENS_FACING)
+                    val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as android.hardware.camera2.CameraManager
+                    cameraManager.cameraIdList.mapNotNull { cameraId ->
+                        val chars = cameraManager.getCameraCharacteristics(cameraId)
+                        val facing = chars.get(CameraCharacteristics.LENS_FACING)
                         if (facing != CameraCharacteristics.LENS_FACING_BACK) return@mapNotNull null
-                        val pixelArray = info.getCameraCharacteristic(CameraCharacteristics.SENSOR_INFO_PIXEL_ARRAY_SIZE)
-                        val activeArray = info.getCameraCharacteristic(CameraCharacteristics.SENSOR_INFO_ACTIVE_ARRAY_SIZE)
-                        val physicalSize = info.getCameraCharacteristic(CameraCharacteristics.SENSOR_INFO_PHYSICAL_SIZE)
-                        val map = info.getCameraCharacteristic(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
-                        val sizes = map?.getOutputSizes(android.graphics.ImageFormat.JPEG)?.toList().orEmpty()
+                        val pixelArray = chars.get(CameraCharacteristics.SENSOR_INFO_PIXEL_ARRAY_SIZE)
+                        val activeArray = chars.get(CameraCharacteristics.SENSOR_INFO_ACTIVE_ARRAY_SIZE)
+                        val physicalSize = chars.get(CameraCharacteristics.SENSOR_INFO_PHYSICAL_SIZE)
+                        val map = chars.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
+                        val jpegSizes = map?.getOutputSizes(android.graphics.ImageFormat.JPEG)?.toList().orEmpty()
                             .sortedByDescending { it.width.toLong() * it.height.toLong() }
-                        val maxSizes = sizes.take(5).joinToString { size ->
-                            val mp = size.width.toLong() * size.height.toLong() / 1_000_000.0
-                            String.format(Locale.US, "%.1fMP (%dx%d)", mp, size.width, size.height)
-                        }.ifBlank { "JPEG sizes unavailable" }
-                        val caps = info.getCameraCharacteristic(CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES)
-                            ?.toSet().orEmpty()
+                        val rawSizes = map?.getOutputSizes(android.graphics.ImageFormat.RAW_SENSOR)?.toList().orEmpty()
+                            .sortedByDescending { it.width.toLong() * it.height.toLong() }
+                        fun formatSizes(sizes: List<android.util.Size>): String =
+                            sizes.take(5).joinToString { size ->
+                                val mp = size.width.toLong() * size.height.toLong() / 1_000_000.0
+                                String.format(Locale.US, "%.1fMP (%dx%d)", mp, size.width, size.height)
+                            }.ifBlank { "Not exposed" }
+                        val caps = chars.get(CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES)?.toSet().orEmpty()
                         val raw = caps.contains(CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_RAW)
                         val manual = caps.contains(CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_MANUAL_SENSOR)
+                        val physicalIds = if (android.os.Build.VERSION.SDK_INT >= 28 &&
+                            caps.contains(CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_LOGICAL_MULTI_CAMERA)
+                        ) runCatching { chars.physicalCameraIds.joinToString().ifBlank { "None reported" } }.getOrDefault("Unavailable")
+                        else "Not a logical multi-camera"
                         buildString {
-                            append("Camera ID: ${info.cameraId}\n")
+                            append("Camera ID: $cameraId\n")
                             append("Sensor pixel array: ${pixelArray?.let { "${it.width}×${it.height}" } ?: "Not reported"}\n")
                             append("Active array: ${activeArray?.let { "${it.width()}×${it.height()}" } ?: "Not reported"}\n")
                             append("Sensor physical size: ${physicalSize?.let { String.format(Locale.US, "%.2f×%.2f mm", it.width, it.height) } ?: "Not reported"}\n")
-                            append("JPEG streams (largest first): $maxSizes\n")
-                            append("RAW: ${if (raw) "supported" else "not advertised"} • Manual sensor: ${if (manual) "supported" else "not advertised"}")
+                            append("JPEG streams: ${formatSizes(jpegSizes)}\n")
+                            append("RAW_SENSOR streams: ${if (raw) formatSizes(rawSizes) else "RAW capability not advertised"}\n")
+                            append("Physical camera IDs: $physicalIds\n")
+                            append("Manual sensor: ${if (manual) "supported" else "not advertised"}")
                         }
-                    }.joinToString("\n\n").ifBlank { "No rear camera characteristics exposed." }
+                    }.joinToString("\n\n").ifBlank { "No rear Camera2 IDs exposed by Android." }
                 }.getOrElse { "Could not read camera characteristics: ${it.javaClass.simpleName}" }
                 onHardwareInfoChanged(hardwareReport)
                 val jpegSizes = runCatching {
