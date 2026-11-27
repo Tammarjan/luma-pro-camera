@@ -1429,7 +1429,15 @@ private fun applyChromaNoiseReduction(
 private fun developDngToJpeg(context: Context, sourceUri: Uri) {
     val bitmap = context.contentResolver.openFileDescriptor(sourceUri, "r")?.use { descriptor ->
         LibRaw().use { raw ->
-            val openResult = raw.openFd(descriptor.fd)
+            // AndroidLibRaw's native openFd() wraps the supplied FD with fdopen()
+            // and closes it with fclose() before returning. Never pass the FD owned
+            // by this ParcelFileDescriptor: .use{} would close that same FD again
+            // and Android fdsan aborts the process for the double ownership.
+            // Duplicate it, then detach so native LibRaw is its sole owner.
+            val libRawFd = android.os.ParcelFileDescriptor
+                .dup(descriptor.fileDescriptor)
+                .detachFd()
+            val openResult = raw.openFd(libRawFd)
             check(openResult == 0) { "LibRaw could not open this DNG (code $openResult)" }
             raw.setQuality(3)
             raw.setCameraWhiteBalance(true)
