@@ -301,7 +301,7 @@ private fun LumaCameraScreen() {
             rawDeveloping = true
             cameraScope.launch {
                 val result = withContext(Dispatchers.IO) {
-                    runCatching { developDngToJpeg(context, uri) }
+                    runCatching { developDngToJpeg(context, uri, liveDenoise) }
                 }
                 rawDeveloping = false
                 // The system document picker backgrounds the Activity. Always recreate the
