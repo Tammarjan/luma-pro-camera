@@ -1423,17 +1423,28 @@ private fun applyChromaNoiseReduction(
             val centerLuma = 0.299f * red + 0.587f * green + 0.114f * blue
             var lumaSum = centerLuma * 2f
             var lumaWeight = 2f
-            val neighbourLumas = floatArrayOf(
-                luminance(middle[left]),
-                luminance(middle[right]),
-                luminance(top[x]),
-                luminance(bottom[x])
-            )
-            for (neighbourLuma in neighbourLumas) {
-                if (kotlin.math.abs(neighbourLuma - centerLuma) <= lumaThreshold) {
-                    lumaSum += neighbourLuma
-                    lumaWeight += 1f
-                }
+            // Avoid allocating a temporary array for every pixel. At 12MP,
+            // even tiny per-pixel allocations create heavy GC pressure and can
+            // cause pauses or out-of-memory failures on mid-range phones.
+            val leftLuma = luminance(middle[left])
+            if (kotlin.math.abs(leftLuma - centerLuma) <= lumaThreshold) {
+                lumaSum += leftLuma
+                lumaWeight += 1f
+            }
+            val rightLuma = luminance(middle[right])
+            if (kotlin.math.abs(rightLuma - centerLuma) <= lumaThreshold) {
+                lumaSum += rightLuma
+                lumaWeight += 1f
+            }
+            val topLuma = luminance(top[x])
+            if (kotlin.math.abs(topLuma - centerLuma) <= lumaThreshold) {
+                lumaSum += topLuma
+                lumaWeight += 1f
+            }
+            val bottomLuma = luminance(bottom[x])
+            if (kotlin.math.abs(bottomLuma - centerLuma) <= lumaThreshold) {
+                lumaSum += bottomLuma
+                lumaWeight += 1f
             }
             val filteredLuma = centerLuma + ((lumaSum / lumaWeight) - centerLuma) * lumaAmount
 
