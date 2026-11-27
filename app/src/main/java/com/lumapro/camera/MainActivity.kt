@@ -1366,6 +1366,9 @@ private fun developDngToJpeg(context: Context, sourceUri: Uri) {
             raw.setOutputBps(8)
             // Normalize linear sensor values for a display JPEG and blend clipped highlights.
             raw.setAutoBrightness(true)
+            // A small RAW exposure lift helps recover midtones in dim scenes while
+            // preserving bright areas; avoid a large lift that would clip highlights.
+            raw.setExposureCorrectionBeforeDemosaic(true, 1.18f, 0.65f)
             raw.setHighlightMode(2) // Blend highlight channels where possible.
             raw.setFbddNoiseReduction(1) // Light Bayer-domain denoising before demosaicing.
             // AndroidLibRaw 2.0.7 returns a HARDWARE bitmap from decodeBitmap()
@@ -1385,10 +1388,12 @@ private fun developDngToJpeg(context: Context, sourceUri: Uri) {
     val finishedBitmap = try {
         val output = Bitmap.createBitmap(bitmap.width, bitmap.height, Bitmap.Config.ARGB_8888)
         val colorMatrix = android.graphics.ColorMatrix().apply {
+            // Gentle contrast and a small positive lift. The previous negative
+            // offsets were crushing shadow brightness in already dim scenes.
             set(floatArrayOf(
-                1.10f, 0f, 0f, 0f, -10f,
-                0f, 1.10f, 0f, 0f, -10f,
-                0f, 0f, 1.04f, 0f, -8f,
+                1.06f, 0f, 0f, 0f, 3f,
+                0f, 1.06f, 0f, 0f, 3f,
+                0f, 0f, 1.04f, 0f, 3f,
                 0f, 0f, 0f, 1f, 0f
             ))
             postConcat(android.graphics.ColorMatrix().apply { setSaturation(1.06f) })
