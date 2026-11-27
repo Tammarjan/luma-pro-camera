@@ -569,7 +569,7 @@ private fun LumaCameraScreen() {
             Column(
                 modifier = Modifier.align(Alignment.BottomCenter)
                     .fillMaxWidth()
-                    .padding(start = 18.dp, end = 18.dp, bottom = 178.dp)
+                    .padding(start = 18.dp, end = 18.dp, bottom = 220.dp)
                     .background(Color(0xE9161920), RoundedCornerShape(24.dp))
                     .padding(horizontal = 20.dp, vertical = 16.dp)
             ) {
@@ -626,7 +626,7 @@ private fun LumaCameraScreen() {
             Row(
                 modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth()
                     .background(Color(0xA6101218))
-                    .padding(start = 18.dp, end = 14.dp, top = 12.dp, bottom = 12.dp),
+                    .padding(start = 14.dp, end = 12.dp, top = 12.dp, bottom = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
@@ -636,9 +636,9 @@ private fun LumaCameraScreen() {
                     Text("PRO CAMERA", color = Color(0xFFB7BDC8), style = MaterialTheme.typography.labelSmall,
                         letterSpacing = 1.5.sp)
                 }
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                     Surface(
-                        modifier = Modifier.height(40.dp).clickable {
+                        modifier = Modifier.height(38.dp).clickable {
                             hdrMode = when (hdrMode) { 0 -> 1; 1 -> 2; else -> 0 }
                         },
                         color = if (hdrMode == 0) Color(0x553A3E46) else Color(0xFFFFD54F),
@@ -651,16 +651,7 @@ private fun LumaCameraScreen() {
                         }
                     }
                     Surface(
-                        modifier = Modifier.height(40.dp).clickable { if (!isCapturing) aspectRatioWide = !aspectRatioWide },
-                        color = Color(0x553A3E46), shape = RoundedCornerShape(14.dp)
-                    ) {
-                        Box(Modifier.padding(horizontal = 11.dp), contentAlignment = Alignment.Center) {
-                            Text(if (aspectRatioWide) "16:9" else "4:3", color = Color.White,
-                                style = MaterialTheme.typography.labelMedium)
-                        }
-                    }
-                    Surface(
-                        modifier = Modifier.size(40.dp).clickable {
+                        modifier = Modifier.size(38.dp).clickable {
                             flashEnabled = !flashEnabled
                             imageCapture?.flashMode = if (flashEnabled) ImageCapture.FLASH_MODE_ON else ImageCapture.FLASH_MODE_OFF
                         },
@@ -705,8 +696,13 @@ private fun LumaCameraScreen() {
                         Text(if (isRecordingVideo) "RECORDING • ${recordingSeconds}s" else if (videoMode) "VIDEO MODE" else "PHOTO MODE",
                             color = Color.White, style = MaterialTheme.typography.labelSmall, letterSpacing = 1.sp)
                     }
-                    QuickCameraChip(if (captureTimerSeconds == 0) "TIMER OFF" else "TIMER ${captureTimerSeconds}s", !isCapturing) {
-                        captureTimerSeconds = when (captureTimerSeconds) { 0 -> 3; 3 -> 5; 5 -> 10; else -> 0 }
+                    Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                        QuickCameraChip(if (aspectRatioWide) "16:9" else "4:3", !isCapturing) {
+                            if (!isCapturing) aspectRatioWide = !aspectRatioWide
+                        }
+                        QuickCameraChip(if (captureTimerSeconds == 0) "TIMER OFF" else "TIMER ${captureTimerSeconds}s", !isCapturing) {
+                            captureTimerSeconds = when (captureTimerSeconds) { 0 -> 3; 3 -> 5; 5 -> 10; else -> 0 }
+                        }
                     }
                 }
                 Row(Modifier.fillMaxWidth().padding(vertical = 5.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
