@@ -1344,13 +1344,13 @@ private fun CameraPreview(
     val previewView = remember {
         PreviewView(context).apply {
             scaleType = PreviewView.ScaleType.FILL_CENTER
-            implementationMode = PreviewView.ImplementationMode.COMPATIBLE
+            implementationMode = PreviewView.ImplementationMode.PERFORMANCE
         }
     }
 
     var boundCamera by remember { mutableStateOf<Camera?>(null) }
     var activeMedia3Effect by remember { mutableStateOf<Media3Effect?>(null) }
-    SideEffect {
+    LaunchedEffect(activeMedia3Effect, liveBrightness, liveContrast, liveSaturation, liveWarmth, liveTint, liveDenoise, liveSharpening, liveClarity, liveTexture, liveHighlights, liveShadows, hdrStrength) {
         activeMedia3Effect?.setEffects(
             listOf(Brightness(liveBrightness.coerceIn(-1f, 1f)), Contrast(liveContrast.coerceIn(-1f, 1f)), HslAdjustment.Builder().adjustSaturation((liveSaturation * 100f).coerceIn(-100f, 100f)).build(), RgbAdjustment.Builder().setRedScale((1f + liveWarmth * 0.16f + liveTint * 0.07f).coerceIn(0.75f, 1.25f)).setGreenScale((1f - liveTint * 0.12f).coerceIn(0.75f, 1.25f)).setBlueScale((1f - liveWarmth * 0.16f + liveTint * 0.07f).coerceIn(0.75f, 1.25f)).build(), LiveDetailEffect(liveDenoise, liveSharpening, liveClarity, liveTexture, liveHighlights, liveShadows, hdrStrength))
         )
