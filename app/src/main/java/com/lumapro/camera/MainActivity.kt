@@ -3,6 +3,8 @@ package com.lumapro.camera
 import android.Manifest
 import android.hardware.camera2.CameraCharacteristics
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
@@ -13,6 +15,7 @@ import android.content.Intent
 import android.net.Uri
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.os.ParcelFileDescriptor
 import android.provider.MediaStore
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -20,6 +23,7 @@ import android.view.KeyEvent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import com.homesoft.photo.libraw.LibRaw
 import androidx.activity.result.IntentSenderRequest
 import androidx.camera.core.Camera
 import androidx.camera.core.CameraEffect
@@ -274,6 +278,7 @@ private fun LumaCameraScreen() {
     var rollDegrees by remember { mutableFloatStateOf(0f) }
     var rawJpegSupported by remember { mutableStateOf(false) }
     var rawCaptureEnabled by remember { mutableStateOf(false) }
+    var rawDeveloping by remember { mutableStateOf(false) }
     var manualSensorSupported by remember { mutableStateOf(false) }
     var manualExposureEnabled by remember { mutableStateOf(false) }
     var isoMin by remember { mutableIntStateOf(100) }
@@ -289,6 +294,23 @@ private fun LumaCameraScreen() {
     var supportedWbModes by remember { mutableStateOf(listOf(CaptureRequest.CONTROL_AWB_MODE_AUTO)) }
     var selectedWbMode by remember { mutableIntStateOf(CaptureRequest.CONTROL_AWB_MODE_AUTO) }
 
+    val rawDevelopLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null && !rawDeveloping) {
+            rawDeveloping = true
+            cameraScope.launch {
+                val result = withContext(Dispatchers.IO) {
+                    runCatching { developDngToJpeg(context, uri) }
+                }
+                rawDeveloping = false
+                result.onSuccess {
+                    Toast.makeText(context, "RAW developed: Pictures/Luma Pro Camera", Toast.LENGTH_LONG).show()
+                }.onFailure {
+                    android.util.Log.e("LumaProCamera", "RAW development failed", it)
+                    Toast.makeText(context, "RAW development failed: ${it.message ?: it.javaClass.simpleName}", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
     val importConfigLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) runCatching {
             val json = context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { JSONObject(it.readText()) }
@@ -928,6 +950,18 @@ private fun LumaCameraScreen() {
                             }
                         }
                         else -> {
+                            Button(
+                                onClick = { if (!rawDeveloping) rawDevelopLauncher.launch(arrayOf("image/x-adobe-dng", "application/octet-stream", "*/*")) },
+                                enabled = !rawDeveloping,
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFD54F), contentColor = Color(0xFF171717))
+                            ) {
+                                Text(if (rawDeveloping) "DEVELOPING RAW…" else "DEVELOP DNG → JPEG")
+                            }
+                            Text(
+                                "Open a Luma DNG file to develop its Bayer sensor data into a full-resolution JPEG. The original DNG is kept unchanged.",
+                                color = Color(0xFFB8BEC8), style = MaterialTheme.typography.bodySmall
+                            )
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                 QuickCameraChip(if (gridEnabled) "GRID ON" else "GRID", true) { gridEnabled = !gridEnabled }
                                 QuickCameraChip(if (histogramEnabled) "HISTOGRAM ON" else "HISTOGRAM", true) { histogramEnabled = !histogramEnabled }
@@ -1312,6 +1346,51 @@ private fun setManualExposure(camera: Camera?, enabled: Boolean, iso: Int, shutt
             builder.setCaptureRequestOption(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_ON)
         }
         Camera2CameraControl.from(activeCamera.cameraControl).setCaptureRequestOptions(builder.build())
+    }
+}
+
+private fun developDngToJpeg(context: Context, sourceUri: Uri) {
+    val bitmap = context.contentResolver.openFileDescriptor(sourceUri, "r")?.use { descriptor ->
+        LibRaw().use { raw ->
+            val openResult = raw.openFd(descriptor.fd)
+            check(openResult == 0) { "LibRaw could not open this DNG (code $openResult)" }
+            raw.setQuality(3)
+            raw.setCameraWhiteBalance(true)
+            raw.setUseCameraMatrix(LibRaw.USE_CAMERA_MATRIX_DEFAULT)
+            raw.setOutputColorSpace(LibRaw.COLORSPACE_SRGB)
+            raw.setOutputBps(8)
+            raw.setFbddNoiseReduction(1)
+            raw.setAutoBrightness(false)
+            val options = BitmapFactory.Options().apply {
+                inPreferredConfig = Bitmap.Config.ARGB_8888
+                inSampleSize = 1
+            }
+            raw.decodeBitmap(options)
+        }
+    } ?: error("Cannot open selected DNG file")
+
+    try {
+        val stamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+        val values = ContentValues().apply {
+            put(MediaStore.Images.Media.DISPLAY_NAME, "Luma_RAW_Developed_$stamp.jpg")
+            put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/Luma Pro Camera")
+            }
+        }
+        val outputUri = context.contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
+            ?: error("Could not create output JPEG")
+        try {
+            context.contentResolver.openOutputStream(outputUri, "w")?.use { stream ->
+                check(bitmap.compress(Bitmap.CompressFormat.JPEG, 96, stream)) { "JPEG encoding failed" }
+                stream.flush()
+            } ?: error("Could not write output JPEG")
+        } catch (error: Exception) {
+            runCatching { context.contentResolver.delete(outputUri, null, null) }
+            throw error
+        }
+    } finally {
+        if (!bitmap.isRecycled) bitmap.recycle()
     }
 }
 
