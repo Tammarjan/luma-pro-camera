@@ -1360,69 +1360,68 @@ private fun applyChromaNoiseReduction(
     strength: Float = 0.55f
 ) {
     require(source.width == destination.width && source.height == destination.height)
+    require(source !== destination) { "Chroma filter requires separate source and destination bitmaps" }
+
     val width = source.width
     val height = source.height
     val top = IntArray(width)
     val middle = IntArray(width)
     val bottom = IntArray(width)
     val outputRow = IntArray(width)
+    val verticalCb = FloatArray(width)
+    val verticalCr = FloatArray(width)
     val amount = strength.coerceIn(0f, 0.8f)
 
-    source.getPixels(middle, 0, width, 0, 0, width, 1)
-    if (height > 1) source.getPixels(bottom, 0, width, 0, 1, width, 1)
-    else System.arraycopy(middle, 0, bottom, 0, width)
+    source.getPixels(top, 0, width, 0, 0, width, 1)
+    System.arraycopy(top, 0, middle, 0, width)
+    source.getPixels(bottom, 0, width, 0, minOf(1, height - 1), width, 1)
 
     for (y in 0 until height) {
-        if (y > 0) System.arraycopy(middle, 0, top, 0, width)
-        if (y > 0) System.arraycopy(bottom, 0, middle, 0, width)
-        val nextY = (y + 1).coerceAtMost(height - 1)
-        source.getPixels(bottom, 0, width, 0, nextY, width, 1)
+        // Build one vertical 3-pixel chroma sum. This avoids recalculating
+        // RGB-to-chroma conversion nine times for every output pixel.
+        for (x in 0 until width) {
+            val p0 = top[x]
+            val p1 = middle[x]
+            val p2 = bottom[x]
+            val redSum = ((p0 ushr 16) and 0xff) + ((p1 ushr 16) and 0xff) + ((p2 ushr 16) and 0xff)
+            val greenSum = ((p0 ushr 8) and 0xff) + ((p1 ushr 8) and 0xff) + ((p2 ushr 8) and 0xff)
+            val blueSum = (p0 and 0xff) + (p1 and 0xff) + (p2 and 0xff)
+
+            verticalCb[x] = 384f - 0.168736f * redSum - 0.331264f * greenSum + 0.5f * blueSum
+            verticalCr[x] = 384f + 0.5f * redSum - 0.418688f * greenSum - 0.081312f * blueSum
+        }
 
         for (x in 0 until width) {
             val center = middle[x]
-            val a = (center ushr 24) and 0xff
-            val r = (center ushr 16) and 0xff
-            val g = (center ushr 8) and 0xff
-            val b = center and 0xff
+            val alpha = (center ushr 24) and 0xff
+            val red = ((center ushr 16) and 0xff).toFloat()
+            val green = ((center ushr 8) and 0xff).toFloat()
+            val blue = (center and 0xff).toFloat()
 
-            var cbSum = 0f
-            var crSum = 0f
-            var count = 0
-            for (dy in -1..1) {
-                val row = when {
-                    y == 0 && dy < 0 -> middle
-                    y == height - 1 && dy > 0 -> middle
-                    dy < 0 -> top
-                    dy > 0 -> bottom
-                    else -> middle
-                }
-                for (dx in -1..1) {
-                    val nx = (x + dx).coerceIn(0, width - 1)
-                    val pixel = row[nx]
-                    val nr = ((pixel ushr 16) and 0xff).toFloat()
-                    val ng = ((pixel ushr 8) and 0xff).toFloat()
-                    val nb = (pixel and 0xff).toFloat()
-                    cbSum += 128f - 0.168736f * nr - 0.331264f * ng + 0.5f * nb
-                    crSum += 128f + 0.5f * nr - 0.418688f * ng - 0.081312f * nb
-                    count++
-                }
-            }
+            val left = (x - 1).coerceAtLeast(0)
+            val right = (x + 1).coerceAtMost(width - 1)
+            val smoothCb = (verticalCb[left] + verticalCb[x] + verticalCb[right]) / 9f
+            val smoothCr = (verticalCr[left] + verticalCr[x] + verticalCr[right]) / 9f
 
-            val rf = r.toFloat()
-            val gf = g.toFloat()
-            val bf = b.toFloat()
-            val yValue = 0.299f * rf + 0.587f * gf + 0.114f * bf
-            val cb = (128f - 0.168736f * rf - 0.331264f * gf + 0.5f * bf) * (1f - amount) +
-                (cbSum / count) * amount
-            val cr = (128f + 0.5f * rf - 0.418688f * gf - 0.081312f * bf) * (1f - amount) +
-                (crSum / count) * amount
+            val centerCb = 128f - 0.168736f * red - 0.331264f * green + 0.5f * blue
+            val centerCr = 128f + 0.5f * red - 0.418688f * green - 0.081312f * blue
+            val cb = centerCb + (smoothCb - centerCb) * amount
+            val cr = centerCr + (smoothCr - centerCr) * amount
+            val luma = 0.299f * red + 0.587f * green + 0.114f * blue
 
-            val outR = (yValue + 1.402f * (cr - 128f)).toInt().coerceIn(0, 255)
-            val outG = (yValue - 0.344136f * (cb - 128f) - 0.714136f * (cr - 128f)).toInt().coerceIn(0, 255)
-            val outB = (yValue + 1.772f * (cb - 128f)).toInt().coerceIn(0, 255)
-            outputRow[x] = (a shl 24) or (outR shl 16) or (outG shl 8) or outB
+            val outRed = (luma + 1.402f * (cr - 128f)).toInt().coerceIn(0, 255)
+            val outGreen = (luma - 0.344136f * (cb - 128f) - 0.714136f * (cr - 128f)).toInt().coerceIn(0, 255)
+            val outBlue = (luma + 1.772f * (cb - 128f)).toInt().coerceIn(0, 255)
+            outputRow[x] = (alpha shl 24) or (outRed shl 16) or (outGreen shl 8) or outBlue
         }
+
         destination.setPixels(outputRow, 0, width, 0, y, width, 1)
+
+        if (y < height - 1) {
+            System.arraycopy(middle, 0, top, 0, width)
+            System.arraycopy(bottom, 0, middle, 0, width)
+            source.getPixels(bottom, 0, width, 0, minOf(y + 2, height - 1), width, 1)
+        }
     }
 }
 
