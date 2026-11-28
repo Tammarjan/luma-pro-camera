@@ -1924,13 +1924,63 @@ private fun capturePhoto(
             val rawOptions = ImageCapture.OutputFileOptions.Builder(
                 context.contentResolver, MediaStore.Images.Media.EXTERNAL_CONTENT_URI, rawValues
             ).build()
+            // CameraX invokes this callback once for RAW_SENSOR and once for JPEG.
+            // The order is not guaranteed; identify each result by getImageFormat().
             val completed = java.util.concurrent.atomic.AtomicInteger(0)
             val failed = java.util.concurrent.atomic.AtomicBoolean(false)
+            val rawUri = java.util.concurrent.atomic.AtomicReference<Uri?>(null)
+            val jpegUri = java.util.concurrent.atomic.AtomicReference<Uri?>(null)
             imageCapture.takePicture(rawOptions, outputOptions, executor, object : ImageCapture.OnImageSavedCallback {
                 override fun onImageSaved(output: ImageCapture.OutputFileResults) {
-                    if (completed.incrementAndGet() == 2 && !failed.get()) onComplete(true)
+                    when (output.imageFormat) {
+                        android.graphics.ImageFormat.RAW_SENSOR -> rawUri.set(output.savedUri)
+                        android.graphics.ImageFormat.JPEG -> jpegUri.set(output.savedUri)
+                        else -> android.util.Log.w(
+                            "LumaProCamera",
+                            "Unexpected RAW+JPEG output format: ${output.imageFormat}"
+                        )
+                    }
+                    if (completed.incrementAndGet() == 2 && !failed.get()) {
+                        val savedRaw = rawUri.get()
+                        val savedJpeg = jpegUri.get()
+                        Thread({
+                            var processedByRawEngine = false
+                            if (savedRaw != null) {
+                                processedByRawEngine = runCatching {
+                                    developDngToJpeg(
+                                        context, savedRaw,
+                                        denoise = processing.denoise,
+                                        brightness = processing.brightness,
+                                        contrast = processing.contrast,
+                                        saturation = processing.saturation,
+                                        warmth = processing.warmth,
+                                        tint = processing.tint,
+                                        sharpening = processing.sharpening,
+                                        clarity = processing.clarity,
+                                        texture = processing.texture,
+                                        highlights = processing.highlights,
+                                        shadows = processing.shadows
+                                    )
+                                }.onFailure {
+                                    android.util.Log.e("LumaProCamera", "LibRaw development failed; using camera JPEG fallback", it)
+                                }.isSuccess
+                            }
+                            if (!processedByRawEngine && savedJpeg != null && processing.hasAdjustments) {
+                                runCatching { processCapturedJpeg(context, savedJpeg, processing) }
+                                    .onFailure {
+                                        android.util.Log.e("LumaProCamera", "JPEG fallback processing failed; original camera JPEG retained", it)
+                                    }
+                            } else if (processedByRawEngine && savedJpeg != null) {
+                                // Keep the original DNG and the LibRaw-developed JPEG.
+                                // Remove the redundant in-camera JPEG only after the developed file exists.
+                                runCatching { context.contentResolver.delete(savedJpeg, null, null) }
+                            }
+                            executor.execute { onComplete(savedJpeg != null || savedRaw != null) }
+                        }, "LumaRawDevelop").start()
+                    }
                 }
                 override fun onError(exception: ImageCaptureException) {
+                    android.util.Log.e("LumaProCamera", "RAW+JPEG capture failed", exception)
                     if (failed.compareAndSet(false, true)) onComplete(false)
                 }
             })
