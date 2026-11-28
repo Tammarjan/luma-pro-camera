@@ -1828,7 +1828,7 @@ private fun processCapturedJpeg(context: Context, uri: Uri, settings: PhotoProce
 
     var processed: Bitmap? = null
     var rotated: Bitmap? = null
-    val temp = File(context.cacheDir, "luma_processed_\${System.nanoTime()}.jpg")
+    val temp = File(context.cacheDir, "luma_processed_${System.nanoTime()}.jpg")
     try {
         val contrastScale = (1f + settings.contrast.coerceIn(-1f, 1f) * 0.35f).coerceIn(0.65f, 1.35f)
         val brightnessOffset = settings.brightness.coerceIn(-1f, 1f) * 42f
@@ -1900,7 +1900,7 @@ private fun capturePhoto(
     processing: PhotoProcessingSettings,
     onComplete: (Boolean) -> Unit
 ) {
-    val fileName = "Luma_\${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())}.jpg"
+    val fileName = "Luma_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())}.jpg"
     val values = ContentValues().apply {
         put(MediaStore.Images.Media.DISPLAY_NAME, fileName)
         put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
