@@ -5,6 +5,7 @@ import android.hardware.camera2.CameraCharacteristics
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import java.io.File
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
@@ -222,6 +223,7 @@ private fun LumaCameraScreen() {
     var videoCapture by remember { mutableStateOf<VideoCapture<Recorder>?>(null) }
     var activeRecording by remember { mutableStateOf<Recording?>(null) }
     var videoMode by remember { mutableStateOf(false) }
+    var nightMode by remember { mutableStateOf(false) }
     var isRecordingVideo by remember { mutableStateOf(false) }
     var recordingSeconds by remember { mutableIntStateOf(0) }
     var hasAudioPermission by remember { mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) }
@@ -406,29 +408,19 @@ private fun LumaCameraScreen() {
                     delay(1000)
                     timerCountdown -= 1
                 }
-                capturePhoto(
-                    context = context,
-                    imageCapture = capture,
-                    executor = ContextCompat.getMainExecutor(context),
-                    saveRawAndJpeg = rawCaptureEnabled && rawJpegSupported,
-                    onComplete = { success ->
-                        isCapturing = false
-                        if (success) {
-                            showCaptureFlash = true
-                            cameraScope.launch {
-                                delay(110)
-                                showCaptureFlash = false
-                            }
-                        }
-                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        Toast.makeText(
-                            context,
-                            if (success) "Photo saved to Pictures/Luma Pro Camera"
-                            else "Capture failed. Try again.",
-                            Toast.LENGTH_SHORT
-                        ).show()
+                val complete: (Boolean) -> Unit = { success ->
+                    isCapturing = false
+                    if (success) {
+                        showCaptureFlash = true
+                        cameraScope.launch { delay(110); showCaptureFlash = false }
                     }
-                )
+                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    Toast.makeText(context,
+                        if (success) if (nightMode) "Night photo saved to Pictures/Luma Pro Camera" else "Photo saved to Pictures/Luma Pro Camera"
+                        else "Capture failed. Try again.", Toast.LENGTH_SHORT).show()
+                }
+                if (nightMode && !videoMode) captureNightPhoto(context, capture, ContextCompat.getMainExecutor(context), complete)
+                else capturePhoto(context, capture, ContextCompat.getMainExecutor(context), rawCaptureEnabled && rawJpegSupported, complete)
             }
         }
     }
@@ -740,7 +732,7 @@ private fun LumaCameraScreen() {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Box(Modifier.size(7.dp).background(if (isRecordingVideo) Color(0xFFFF5252) else Color(0xFFFFD54F), CircleShape))
-                        Text(if (isRecordingVideo) "RECORDING • ${recordingSeconds}s" else if (videoMode) "VIDEO MODE" else "PHOTO MODE",
+                        Text(if (isRecordingVideo) "RECORDING • ${recordingSeconds}s" else if (videoMode) "VIDEO MODE" else if (nightMode) "NIGHT MODE · 5 FRAMES" else "PHOTO MODE",
                             color = Color.White, style = MaterialTheme.typography.labelSmall, letterSpacing = 1.sp)
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
@@ -749,6 +741,19 @@ private fun LumaCameraScreen() {
                         }
                         QuickCameraChip(if (captureTimerSeconds == 0) "TIMER OFF" else "TIMER ${captureTimerSeconds}s", !isCapturing) {
                             captureTimerSeconds = when (captureTimerSeconds) { 0 -> 3; 3 -> 5; 5 -> 10; else -> 0 }
+                        }
+                    }
+                }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
+                    QuickCameraChip(if (nightMode) "NIGHT ON · 5 FRAMES" else "NIGHT OFF", !isCapturing && !videoMode, nightMode) {
+                        if (!isCapturing && !videoMode) {
+                            nightMode = !nightMode
+                            if (nightMode) {
+                                rawCaptureEnabled = false
+                                flashEnabled = false
+                                imageCapture?.flashMode = ImageCapture.FLASH_MODE_OFF
+                                Toast.makeText(context, "Luma Night: 5-frame capture", Toast.LENGTH_SHORT).show()
+                            }
                         }
                     }
                 }
@@ -1639,6 +1644,115 @@ private fun developDngToJpeg(
         if (!finishedBitmap.isRecycled) finishedBitmap.recycle()
         if (!bitmap.isRecycled) bitmap.recycle()
     }
+}
+
+
+private fun captureNightPhoto(context: Context, capture: ImageCapture, mainExecutor: Executor, onComplete: (Boolean) -> Unit) {
+    val dir = File(context.cacheDir, "luma_night").apply { mkdirs() }
+    val files = (0 until 5).map { File(dir, "frame_$it.jpg").also { f -> f.delete() } }
+    val done = java.util.concurrent.atomic.AtomicBoolean(false)
+    fun finish(ok: Boolean) {
+        if (done.compareAndSet(false, true)) {
+            files.forEach { it.delete() }
+            mainExecutor.execute { onComplete(ok) }
+        }
+    }
+    fun stack() {
+        var bitmaps: List<Bitmap> = emptyList()
+        var resultBitmap: Bitmap? = null
+        try {
+            val decoded = files.map { BitmapFactory.decodeFile(it.absolutePath) ?: error("Frame decode failed") }
+            val base = decoded[0]
+            val scale = minOf(1f, 1600f / maxOf(base.width, base.height))
+            val w = (base.width * scale).toInt().coerceAtLeast(1)
+            val h = (base.height * scale).toInt().coerceAtLeast(1)
+            bitmaps = decoded.map { b ->
+                if (b.width == w && b.height == h) b
+                else Bitmap.createScaledBitmap(b, w, h, true).also { if (it !== b) b.recycle() }
+            }
+            val tw = 160
+            val th = (h.toFloat() * tw / w).toInt().coerceAtLeast(1)
+            val thumbs = bitmaps.map { b ->
+                val small = Bitmap.createScaledBitmap(b, tw, th, true)
+                IntArray(tw * th).also { small.getPixels(it, 0, tw, 0, 0, tw, th); small.recycle() }
+            }
+            val shifts = mutableListOf(Pair(0, 0))
+            for (n in 1..4) {
+                var bx = 0; var by = 0; var best = Long.MAX_VALUE
+                for (dy in -3..3) for (dx in -3..3) {
+                    var score = 0L; var count = 0; var y = th / 4
+                    while (y < th * 3 / 4) {
+                        var x = tw / 4
+                        while (x < tw * 3 / 4) {
+                            val a = thumbs[0][y * tw + x]
+                            val b = thumbs[n][(y + dy).coerceIn(0, th - 1) * tw + (x + dx).coerceIn(0, tw - 1)]
+                            val ya = (77 * ((a shr 16) and 255) + 150 * ((a shr 8) and 255) + 29 * (a and 255)) shr 8
+                            val yb = (77 * ((b shr 16) and 255) + 150 * ((b shr 8) and 255) + 29 * (b and 255)) shr 8
+                            score += kotlin.math.abs(ya - yb); count++; x += 3
+                        }
+                        y += 3
+                    }
+                    val v = score / count.coerceAtLeast(1)
+                    if (v < best) { best = v; bx = dx; by = dy }
+                }
+                shifts.add(Pair(bx * w / tw, by * w / tw))
+            }
+            val mx = shifts.maxOf { kotlin.math.abs(it.first) } + 1
+            val my = shifts.maxOf { kotlin.math.abs(it.second) } + 1
+            val ow = w - 2 * mx; val oh = h - 2 * my
+            check(ow > 0 && oh > 0) { "Alignment failed" }
+            val arrays = bitmaps.map { b -> IntArray(w * h).also { b.getPixels(it, 0, w, 0, 0, w, h) } }
+            resultBitmap = Bitmap.createBitmap(ow, oh, Bitmap.Config.ARGB_8888)
+            val out = IntArray(ow * oh)
+            fun trim(a: Int, b: Int, c: Int, d: Int, e: Int) =
+                (a + b + c + d + e - minOf(a, b, c, d, e) - maxOf(a, b, c, d, e)) / 3
+            for (y in 0 until oh) for (x in 0 until ow) {
+                val sx = x + mx; val sy = y + my
+                val p = IntArray(5) { i ->
+                    val xx = (sx + shifts[i].first).coerceIn(0, w - 1)
+                    val yy = (sy + shifts[i].second).coerceIn(0, h - 1)
+                    arrays[i][yy * w + xx]
+                }
+                val r = trim((p[0] shr 16) and 255, (p[1] shr 16) and 255, (p[2] shr 16) and 255, (p[3] shr 16) and 255, (p[4] shr 16) and 255)
+                val g = trim((p[0] shr 8) and 255, (p[1] shr 8) and 255, (p[2] shr 8) and 255, (p[3] shr 8) and 255, (p[4] shr 8) and 255)
+                val b = trim(p[0] and 255, p[1] and 255, p[2] and 255, p[3] and 255, p[4] and 255)
+                out[y * ow + x] = (255 shl 24) or (r shl 16) or (g shl 8) or b
+            }
+            resultBitmap.setPixels(out, 0, ow, 0, 0, ow, oh)
+            val temp = File(dir, "night_output.jpg")
+            temp.outputStream().use { check(resultBitmap.compress(Bitmap.CompressFormat.JPEG, 96, it)) }
+            val displayName = "Luma_Night_" + SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date()) + ".jpg"
+            val values = ContentValues().apply {
+                put(MediaStore.Images.Media.DISPLAY_NAME, displayName)
+                put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
+                if (android.os.Build.VERSION.SDK_INT >= 29) put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/Luma Pro Camera")
+            }
+            val uri = context.contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values) ?: error("MediaStore insert failed")
+            try {
+                context.contentResolver.openOutputStream(uri, "w")?.use { os -> temp.inputStream().use { it.copyTo(os) } } ?: error("Output stream unavailable")
+            } catch (e: Exception) {
+                context.contentResolver.delete(uri, null, null); throw e
+            } finally { temp.delete() }
+            finish(true)
+        } catch (e: Exception) {
+            android.util.Log.e("LumaProCamera", "Night stack failed", e); finish(false)
+        } finally {
+            resultBitmap?.recycle()
+            bitmaps.forEach { if (!it.isRecycled) it.recycle() }
+            files.forEach { it.delete() }
+        }
+    }
+    fun captureNext(index: Int) {
+        if (index == files.size) { Thread({ stack() }, "LumaNightStack").start(); return }
+        capture.takePicture(ImageCapture.OutputFileOptions.Builder(files[index]).build(), mainExecutor,
+            object : ImageCapture.OnImageSavedCallback {
+                override fun onImageSaved(output: ImageCapture.OutputFileResults) { captureNext(index + 1) }
+                override fun onError(exception: ImageCaptureException) {
+                    android.util.Log.e("LumaProCamera", "Night frame $index failed", exception); finish(false)
+                }
+            })
+    }
+    captureNext(0)
 }
 
 private fun capturePhoto(
