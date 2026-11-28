@@ -251,17 +251,17 @@ private fun LumaCameraScreen() {
     var exposureMin by remember { mutableIntStateOf(0) }
     var exposureMax by remember { mutableIntStateOf(0) }
     var exposureIndex by remember { mutableIntStateOf(0) }
-    var liveBrightness by remember { mutableFloatStateOf(0f) }
-    var liveContrast by remember { mutableFloatStateOf(0f) }
-    var liveSaturation by remember { mutableFloatStateOf(0f) }
-    var liveWarmth by remember { mutableFloatStateOf(0f) }
+    var liveBrightness by remember { mutableFloatStateOf(0.03f) }
+    var liveContrast by remember { mutableFloatStateOf(0.12f) }
+    var liveSaturation by remember { mutableFloatStateOf(0.10f) }
+    var liveWarmth by remember { mutableFloatStateOf(-0.16f) }
     var liveTint by remember { mutableFloatStateOf(0f) }
-    var liveDenoise by remember { mutableFloatStateOf(0f) }
-    var liveSharpening by remember { mutableFloatStateOf(0f) }
-    var liveClarity by remember { mutableFloatStateOf(0f) }
-    var liveTexture by remember { mutableFloatStateOf(0f) }
-    var liveHighlights by remember { mutableFloatStateOf(0f) }
-    var liveShadows by remember { mutableFloatStateOf(0f) }
+    var liveDenoise by remember { mutableFloatStateOf(0.12f) }
+    var liveSharpening by remember { mutableFloatStateOf(0.16f) }
+    var liveClarity by remember { mutableFloatStateOf(0.14f) }
+    var liveTexture by remember { mutableFloatStateOf(0.12f) }
+    var liveHighlights by remember { mutableFloatStateOf(0.55f) }
+    var liveShadows by remember { mutableFloatStateOf(0.28f) }
     var hdrMode by remember { mutableIntStateOf(0) } // 0=off, 1=HDR, 2=HDR+
     val hdrStrength = when (hdrMode) { 1 -> 0.30f; 2 -> 0.55f; else -> 0f }
     var selectedLiveLook by remember { mutableStateOf("STANDARD") }
