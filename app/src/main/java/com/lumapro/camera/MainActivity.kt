@@ -238,7 +238,7 @@ private fun LumaCameraScreen() {
     var showCaptureFlash by remember { mutableStateOf(false) }
     var captureTimerSeconds by remember { mutableIntStateOf(0) }
     var jpegQuality by remember { mutableIntStateOf(100) }
-    var maximizeQuality by remember { mutableStateOf(true) }
+    var maximizeQuality by remember { mutableStateOf(false) }
     var aspectRatioWide by remember { mutableStateOf(false) }
     var fullResolutionEnabled by remember { mutableStateOf(false) }
     var standardPhotoModeLabel by remember { mutableStateOf<String?>(null) }
@@ -545,10 +545,9 @@ private fun LumaCameraScreen() {
                 },
                 onRawCapabilityChanged = { supported ->
                     rawJpegSupported = supported
-                    // Prefer the higher-bit-depth RAW source by default when the
-                    // active camera explicitly reports simultaneous RAW+JPEG support.
-                    // Users can still turn RAW + JPEG OFF in the Pro settings.
-                    rawCaptureEnabled = supported
+                    // Keep normal PHOTO capture on the fast JPEG path.
+                    // RAW + JPEG remains an explicit opt-in in Pro settings.
+                    if (!supported) rawCaptureEnabled = false
                 },
                 onTapFocus = {
                     if (manualFocusEnabled) {
@@ -1995,11 +1994,12 @@ private fun capturePhoto(
                     if (!processing.hasAdjustments || savedUri == null) {
                         onComplete(true)
                     } else {
+                        // Return shutter control as soon as the original camera JPEG is saved.
+                        // Enhancement runs afterwards and replaces the same MediaStore image.
+                        executor.execute { onComplete(true) }
                         Thread({
-                            val success = runCatching { processCapturedJpeg(context, savedUri, processing) }
-                                .onFailure { android.util.Log.e("LumaProCamera", "JPEG processing failed", it) }
-                                .isSuccess
-                            executor.execute { onComplete(success) }
+                            runCatching { processCapturedJpeg(context, savedUri, processing) }
+                                .onFailure { android.util.Log.e("LumaProCamera", "JPEG enhancement failed; original camera JPEG retained", it) }
                         }, "LumaJpegFinish").start()
                     }
                 }
