@@ -41,6 +41,8 @@ import androidx.camera.camera2.interop.Camera2CameraInfo
 import androidx.camera.camera2.interop.Camera2Interop
 import androidx.camera.camera2.interop.CaptureRequestOptions
 import androidx.camera.core.ImageCapture
+import androidx.camera.extensions.ExtensionMode
+import androidx.camera.extensions.ExtensionsManager
 import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
@@ -1865,7 +1867,20 @@ private fun CameraPreview(
                         }
                     }.joinToString("\n\n").ifBlank { "No rear Camera2 IDs exposed by Android." }
                 }.getOrElse { "Could not read camera characteristics: ${it.javaClass.simpleName}" }
-                onHardwareInfoChanged(hardwareReport)
+                onHardwareInfoChanged(hardwareReport + "\n\nOEM Camera Extensions: checking HDR and Night support…")
+                // Query the OEM extension provider without changing the active camera session.
+                // Actual HDR/Night activation will be added only after device support is confirmed.
+                val extensionsFuture = ExtensionsManager.getInstanceAsync(context, cameraProvider)
+                extensionsFuture.addListener({
+                    val extensionReport = runCatching {
+                        val manager = extensionsFuture.get()
+                        val hdrAvailable = manager.isExtensionAvailable(selector, ExtensionMode.HDR)
+                        val nightAvailable = manager.isExtensionAvailable(selector, ExtensionMode.NIGHT)
+                        "OEM HDR extension: ${if (hdrAvailable) "Available" else "Not available"}\\n" +
+                            "OEM Night extension: ${if (nightAvailable) "Available" else "Not available"}"
+                    }.getOrElse { "OEM Camera Extensions: unavailable (${it.javaClass.simpleName})" }
+                    onHardwareInfoChanged(hardwareReport + "\\n\\n" + extensionReport)
+                }, executor)
                 val jpegSizes = runCatching {
                     camera2Info.getCameraCharacteristic(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
                         ?.getOutputSizes(android.graphics.ImageFormat.JPEG)
