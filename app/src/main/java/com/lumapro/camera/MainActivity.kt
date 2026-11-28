@@ -420,7 +420,18 @@ private fun LumaCameraScreen() {
                         else "Capture failed. Try again.", Toast.LENGTH_SHORT).show()
                 }
                 if (nightMode && !videoMode) captureNightPhoto(context, capture, ContextCompat.getMainExecutor(context), complete)
-                else capturePhoto(context, capture, ContextCompat.getMainExecutor(context), rawCaptureEnabled && rawJpegSupported, complete)
+                else capturePhoto(
+                    context, capture, ContextCompat.getMainExecutor(context),
+                    rawCaptureEnabled && rawJpegSupported,
+                    PhotoProcessingSettings(
+                        brightness = liveBrightness, contrast = liveContrast,
+                        saturation = liveSaturation, warmth = liveWarmth, tint = liveTint,
+                        denoise = liveDenoise, sharpening = liveSharpening,
+                        clarity = liveClarity, texture = liveTexture,
+                        highlights = liveHighlights, shadows = liveShadows
+                    ),
+                    complete
+                )
             }
         }
     }
@@ -1789,14 +1800,107 @@ private fun captureNightPhoto(
     captureNext(0)
 }
 
+private data class PhotoProcessingSettings(
+    val brightness: Float, val contrast: Float, val saturation: Float,
+    val warmth: Float, val tint: Float, val denoise: Float,
+    val sharpening: Float, val clarity: Float, val texture: Float,
+    val highlights: Float, val shadows: Float
+) {
+    val hasAdjustments: Boolean
+        get() = listOf(brightness, contrast, saturation, warmth, tint, denoise,
+            sharpening, clarity, texture, highlights, shadows)
+            .any { kotlin.math.abs(it) > 0.001f }
+}
+
+private fun processCapturedJpeg(context: Context, uri: Uri, settings: PhotoProcessingSettings) {
+    val orientation = runCatching {
+        context.contentResolver.openInputStream(uri)?.use { input ->
+            ExifInterface(input).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
+        } ?: ExifInterface.ORIENTATION_NORMAL
+    }.getOrDefault(ExifInterface.ORIENTATION_NORMAL)
+
+    val source = context.contentResolver.openInputStream(uri)?.use { input ->
+        BitmapFactory.decodeStream(input, null, BitmapFactory.Options().apply {
+            inPreferredConfig = Bitmap.Config.ARGB_8888
+            inMutable = true
+        })
+    } ?: error("Could not decode captured JPEG")
+
+    var processed: Bitmap? = null
+    var rotated: Bitmap? = null
+    val temp = File(context.cacheDir, "luma_processed_\${System.nanoTime()}.jpg")
+    try {
+        val contrastScale = (1f + settings.contrast.coerceIn(-1f, 1f) * 0.35f).coerceIn(0.65f, 1.35f)
+        val brightnessOffset = settings.brightness.coerceIn(-1f, 1f) * 42f
+        val warmthShift = settings.warmth.coerceIn(-1f, 1f) * 18f
+        val tintShift = settings.tint.coerceIn(-1f, 1f) * 14f
+        val colorMatrix = android.graphics.ColorMatrix().apply {
+            set(floatArrayOf(
+                contrastScale, 0f, 0f, 0f, brightnessOffset + warmthShift,
+                0f, contrastScale, 0f, 0f, brightnessOffset + tintShift,
+                0f, 0f, contrastScale, 0f, brightnessOffset - warmthShift,
+                0f, 0f, 0f, 1f, 0f
+            ))
+            postConcat(android.graphics.ColorMatrix().apply {
+                setSaturation((1f + settings.saturation.coerceIn(-1f, 1f) * 0.45f).coerceIn(0.4f, 1.5f))
+            })
+        }
+        processed = Bitmap.createBitmap(source.width, source.height, Bitmap.Config.ARGB_8888)
+        android.graphics.Canvas(processed!!).drawBitmap(
+            source, 0f, 0f,
+            android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+                colorFilter = android.graphics.ColorMatrixColorFilter(colorMatrix)
+                isFilterBitmap = true
+            }
+        )
+        applyChromaNoiseReduction(
+            processed!!, source,
+            strength = settings.denoise.coerceIn(0f, 1f),
+            sharpening = settings.sharpening,
+            clarity = settings.clarity,
+            texture = settings.texture,
+            highlights = settings.highlights,
+            shadows = settings.shadows
+        )
+        processed?.recycle()
+        processed = null
+
+        val rotation = when (orientation) {
+            ExifInterface.ORIENTATION_ROTATE_90 -> 90f
+            ExifInterface.ORIENTATION_ROTATE_180 -> 180f
+            ExifInterface.ORIENTATION_ROTATE_270 -> 270f
+            else -> 0f
+        }
+        rotated = if (rotation != 0f) {
+            Bitmap.createBitmap(source, 0, 0, source.width, source.height,
+                android.graphics.Matrix().apply { postRotate(rotation) }, true)
+        } else source
+
+        temp.outputStream().buffered().use { output ->
+            check(rotated!!.compress(Bitmap.CompressFormat.JPEG, 96, output)) { "JPEG encoding failed" }
+            output.flush()
+        }
+        context.contentResolver.openOutputStream(uri, "wt")?.use { output ->
+            temp.inputStream().buffered().use { input -> input.copyTo(output) }
+            output.flush()
+        } ?: error("Could not replace saved JPEG")
+    } finally {
+        if (rotated != null && rotated !== source && !rotated!!.isRecycled) rotated!!.recycle()
+        if (processed != null && !processed!!.isRecycled) processed!!.recycle()
+        if (!source.isRecycled) source.recycle()
+        temp.delete()
+    }
+}
+
 private fun capturePhoto(
     context: android.content.Context,
     imageCapture: ImageCapture,
     executor: Executor,
     saveRawAndJpeg: Boolean,
+    processing: PhotoProcessingSettings,
     onComplete: (Boolean) -> Unit
 ) {
-    val fileName = "Luma_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())}.jpg"
+    val fileName = "Luma_\${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())}.jpg"
     val values = ContentValues().apply {
         put(MediaStore.Images.Media.DISPLAY_NAME, fileName)
         put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
@@ -1805,9 +1909,7 @@ private fun capturePhoto(
         }
     }
     val outputOptions = ImageCapture.OutputFileOptions.Builder(
-        context.contentResolver,
-        MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-        values
+        context.contentResolver, MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values
     ).build()
 
     try {
@@ -1820,40 +1922,35 @@ private fun capturePhoto(
                 }
             }
             val rawOptions = ImageCapture.OutputFileOptions.Builder(
-                context.contentResolver,
-                MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-                rawValues
+                context.contentResolver, MediaStore.Images.Media.EXTERNAL_CONTENT_URI, rawValues
             ).build()
             val completed = java.util.concurrent.atomic.AtomicInteger(0)
             val failed = java.util.concurrent.atomic.AtomicBoolean(false)
-            imageCapture.takePicture(
-                rawOptions,
-                outputOptions,
-                executor,
-                object : ImageCapture.OnImageSavedCallback {
-                    override fun onImageSaved(output: ImageCapture.OutputFileResults) {
-                        if (completed.incrementAndGet() == 2 && !failed.get()) onComplete(true)
-                    }
-    
-                    override fun onError(exception: ImageCaptureException) {
-                        if (failed.compareAndSet(false, true)) onComplete(false)
-                    }
+            imageCapture.takePicture(rawOptions, outputOptions, executor, object : ImageCapture.OnImageSavedCallback {
+                override fun onImageSaved(output: ImageCapture.OutputFileResults) {
+                    if (completed.incrementAndGet() == 2 && !failed.get()) onComplete(true)
                 }
-            )
+                override fun onError(exception: ImageCaptureException) {
+                    if (failed.compareAndSet(false, true)) onComplete(false)
+                }
+            })
         } else {
-            imageCapture.takePicture(
-                outputOptions,
-                executor,
-                object : ImageCapture.OnImageSavedCallback {
-                    override fun onImageSaved(output: ImageCapture.OutputFileResults) {
+            imageCapture.takePicture(outputOptions, executor, object : ImageCapture.OnImageSavedCallback {
+                override fun onImageSaved(output: ImageCapture.OutputFileResults) {
+                    val savedUri = output.savedUri
+                    if (!processing.hasAdjustments || savedUri == null) {
                         onComplete(true)
-                    }
-    
-                    override fun onError(exception: ImageCaptureException) {
-                        onComplete(false)
+                    } else {
+                        Thread({
+                            val success = runCatching { processCapturedJpeg(context, savedUri, processing) }
+                                .onFailure { android.util.Log.e("LumaProCamera", "JPEG processing failed", it) }
+                                .isSuccess
+                            executor.execute { onComplete(success) }
+                        }, "LumaJpegFinish").start()
                     }
                 }
-            )
+                override fun onError(exception: ImageCaptureException) { onComplete(false) }
+            })
         }
     } catch (exception: Exception) {
         onComplete(false)
