@@ -1647,111 +1647,145 @@ private fun developDngToJpeg(
 }
 
 
-private fun captureNightPhoto(context: Context, capture: ImageCapture, mainExecutor: Executor, onComplete: (Boolean) -> Unit) {
+private fun captureNightPhoto(
+    context: Context,
+    capture: ImageCapture,
+    mainExecutor: Executor,
+    onComplete: (Boolean) -> Unit
+) {
     val dir = File(context.cacheDir, "luma_night").apply { mkdirs() }
-    val files = (0 until 5).map { File(dir, "frame_$it.jpg").also { f -> f.delete() } }
-    val done = java.util.concurrent.atomic.AtomicBoolean(false)
-    fun finish(ok: Boolean) {
-        if (done.compareAndSet(false, true)) {
-            files.forEach { it.delete() }
-            mainExecutor.execute { onComplete(ok) }
+    val frames = (0 until 5).map { File(dir, "frame_$it.jpg").also { file -> file.delete() } }
+    val completed = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    fun finish(success: Boolean) {
+        if (completed.compareAndSet(false, true)) {
+            frames.forEach { it.delete() }
+            mainExecutor.execute { onComplete(success) }
         }
     }
-    fun stack() {
-        var bitmaps: List<Bitmap> = emptyList()
-        var resultBitmap: Bitmap? = null
-        try {
-            val decoded = files.map { BitmapFactory.decodeFile(it.absolutePath) ?: error("Frame decode failed") }
-            val base = decoded[0]
-            val scale = minOf(1f, 1600f / maxOf(base.width, base.height))
-            val w = (base.width * scale).toInt().coerceAtLeast(1)
-            val h = (base.height * scale).toInt().coerceAtLeast(1)
-            bitmaps = decoded.map { b ->
-                if (b.width == w && b.height == h) b
-                else Bitmap.createScaledBitmap(b, w, h, true).also { if (it !== b) b.recycle() }
+
+    fun chooseSharpestOriginal(): File {
+        var bestFile: File? = null
+        var bestScore = Double.NEGATIVE_INFINITY
+
+        for (file in frames) {
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(file.absolutePath, bounds)
+            check(bounds.outWidth > 0 && bounds.outHeight > 0) { "Invalid captured frame" }
+
+            val sample = BitmapFactory.Options().apply {
+                inSampleSize = maxOf(1, maxOf(bounds.outWidth, bounds.outHeight) / 320)
+                inPreferredConfig = Bitmap.Config.ARGB_8888
             }
-            val tw = 160
-            val th = (h.toFloat() * tw / w).toInt().coerceAtLeast(1)
-            val thumbs = bitmaps.map { b ->
-                val small = Bitmap.createScaledBitmap(b, tw, th, true)
-                IntArray(tw * th).also { small.getPixels(it, 0, tw, 0, 0, tw, th); small.recycle() }
-            }
-            val shifts = mutableListOf(Pair(0, 0))
-            for (n in 1..4) {
-                var bx = 0; var by = 0; var best = Long.MAX_VALUE
-                for (dy in -3..3) for (dx in -3..3) {
-                    var score = 0L; var count = 0; var y = th / 4
-                    while (y < th * 3 / 4) {
-                        var x = tw / 4
-                        while (x < tw * 3 / 4) {
-                            val a = thumbs[0][y * tw + x]
-                            val b = thumbs[n][(y + dy).coerceIn(0, th - 1) * tw + (x + dx).coerceIn(0, tw - 1)]
-                            val ya = (77 * ((a shr 16) and 255) + 150 * ((a shr 8) and 255) + 29 * (a and 255)) shr 8
-                            val yb = (77 * ((b shr 16) and 255) + 150 * ((b shr 8) and 255) + 29 * (b and 255)) shr 8
-                            score += kotlin.math.abs(ya - yb); count++; x += 3
-                        }
-                        y += 3
-                    }
-                    val v = score / count.coerceAtLeast(1)
-                    if (v < best) { best = v; bx = dx; by = dy }
-                }
-                shifts.add(Pair(bx * w / tw, by * w / tw))
-            }
-            val mx = shifts.maxOf { kotlin.math.abs(it.first) } + 1
-            val my = shifts.maxOf { kotlin.math.abs(it.second) } + 1
-            val ow = w - 2 * mx; val oh = h - 2 * my
-            check(ow > 0 && oh > 0) { "Alignment failed" }
-            val arrays = bitmaps.map { b -> IntArray(w * h).also { b.getPixels(it, 0, w, 0, 0, w, h) } }
-            resultBitmap = Bitmap.createBitmap(ow, oh, Bitmap.Config.ARGB_8888)
-            val out = IntArray(ow * oh)
-            fun trim(a: Int, b: Int, c: Int, d: Int, e: Int) =
-                (a + b + c + d + e - minOf(a, b, c, d, e) - maxOf(a, b, c, d, e)) / 3
-            for (y in 0 until oh) for (x in 0 until ow) {
-                val sx = x + mx; val sy = y + my
-                val p = IntArray(5) { i ->
-                    val xx = (sx + shifts[i].first).coerceIn(0, w - 1)
-                    val yy = (sy + shifts[i].second).coerceIn(0, h - 1)
-                    arrays[i][yy * w + xx]
-                }
-                val r = trim((p[0] shr 16) and 255, (p[1] shr 16) and 255, (p[2] shr 16) and 255, (p[3] shr 16) and 255, (p[4] shr 16) and 255)
-                val g = trim((p[0] shr 8) and 255, (p[1] shr 8) and 255, (p[2] shr 8) and 255, (p[3] shr 8) and 255, (p[4] shr 8) and 255)
-                val b = trim(p[0] and 255, p[1] and 255, p[2] and 255, p[3] and 255, p[4] and 255)
-                out[y * ow + x] = (255 shl 24) or (r shl 16) or (g shl 8) or b
-            }
-            resultBitmap.setPixels(out, 0, ow, 0, 0, ow, oh)
-            val temp = File(dir, "night_output.jpg")
-            temp.outputStream().use { check(resultBitmap.compress(Bitmap.CompressFormat.JPEG, 96, it)) }
-            val displayName = "Luma_Night_" + SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date()) + ".jpg"
-            val values = ContentValues().apply {
-                put(MediaStore.Images.Media.DISPLAY_NAME, displayName)
-                put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
-                if (android.os.Build.VERSION.SDK_INT >= 29) put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/Luma Pro Camera")
-            }
-            val uri = context.contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values) ?: error("MediaStore insert failed")
+            val bitmap = BitmapFactory.decodeFile(file.absolutePath, sample) ?: continue
             try {
-                context.contentResolver.openOutputStream(uri, "w")?.use { os -> temp.inputStream().use { it.copyTo(os) } } ?: error("Output stream unavailable")
-            } catch (e: Exception) {
-                context.contentResolver.delete(uri, null, null); throw e
-            } finally { temp.delete() }
-            finish(true)
-        } catch (e: Exception) {
-            android.util.Log.e("LumaProCamera", "Night stack failed", e); finish(false)
-        } finally {
-            resultBitmap?.recycle()
-            bitmaps.forEach { if (!it.isRecycled) it.recycle() }
-            files.forEach { it.delete() }
+                val width = bitmap.width
+                val height = bitmap.height
+                if (width < 8 || height < 8) continue
+                val pixels = IntArray(width * height)
+                bitmap.getPixels(pixels, 0, width, 0, 0, width, height)
+
+                // Score focus/detail with a Laplacian variance estimate.
+                // Penalize very dark and clipped frames so a noisy/overexposed
+                // frame is not selected just because it has high contrast.
+                var sum = 0.0
+                var sumSquares = 0.0
+                var count = 0
+                var luminanceSum = 0.0
+                var clipped = 0
+                for (y in 1 until height - 1 step 2) {
+                    for (x in 1 until width - 1 step 2) {
+                        fun lum(pixel: Int): Int =
+                            (77 * ((pixel shr 16) and 255) +
+                             150 * ((pixel shr 8) and 255) +
+                             29 * (pixel and 255)) shr 8
+
+                        val center = lum(pixels[y * width + x])
+                        val laplacian = 4 * center -
+                            lum(pixels[y * width + x - 1]) -
+                            lum(pixels[y * width + x + 1]) -
+                            lum(pixels[(y - 1) * width + x]) -
+                            lum(pixels[(y + 1) * width + x])
+                        sum += laplacian
+                        sumSquares += laplacian.toDouble() * laplacian
+                        luminanceSum += center
+                        if (center < 4 || center > 250) clipped++
+                        count++
+                    }
+                }
+                if (count == 0) continue
+                val mean = sum / count
+                val variance = (sumSquares / count - mean * mean).coerceAtLeast(0.0)
+                val averageLuma = luminanceSum / count
+                val clippedRatio = clipped.toDouble() / count
+                val exposurePenalty = when {
+                    averageLuma < 12.0 -> 0.35
+                    averageLuma > 238.0 -> 0.45
+                    else -> 1.0
+                }
+                val score = variance * exposurePenalty * (1.0 - clippedRatio * 0.7)
+                if (score > bestScore) {
+                    bestScore = score
+                    bestFile = file
+                }
+            } finally {
+                bitmap.recycle()
+            }
+        }
+        return bestFile ?: error("No usable Night frame")
+    }
+
+    fun saveOriginalFrame(file: File) {
+        val displayName = "Luma_Night_" +
+            SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date()) + ".jpg"
+        val values = ContentValues().apply {
+            put(MediaStore.Images.Media.DISPLAY_NAME, displayName)
+            put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
+            if (android.os.Build.VERSION.SDK_INT >= 29) {
+                put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/Luma Pro Camera")
+            }
+        }
+        val uri = context.contentResolver.insert(
+            MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values
+        ) ?: error("Could not create Night photo")
+        try {
+            context.contentResolver.openOutputStream(uri, "w")?.use { output ->
+                file.inputStream().use { input -> input.copyTo(output) }
+            } ?: error("Could not write Night photo")
+        } catch (error: Exception) {
+            context.contentResolver.delete(uri, null, null)
+            throw error
         }
     }
+
     fun captureNext(index: Int) {
-        if (index == files.size) { Thread({ stack() }, "LumaNightStack").start(); return }
-        capture.takePicture(ImageCapture.OutputFileOptions.Builder(files[index]).build(), mainExecutor,
-            object : ImageCapture.OnImageSavedCallback {
-                override fun onImageSaved(output: ImageCapture.OutputFileResults) { captureNext(index + 1) }
-                override fun onError(exception: ImageCaptureException) {
-                    android.util.Log.e("LumaProCamera", "Night frame $index failed", exception); finish(false)
+        if (index == frames.size) {
+            Thread({
+                try {
+                    val selected = chooseSharpestOriginal()
+                    saveOriginalFrame(selected)
+                    finish(true)
+                } catch (error: Exception) {
+                    android.util.Log.e("LumaProCamera", "Night best-frame selection failed", error)
+                    finish(false)
                 }
-            })
+            }, "LumaNightSelect").start()
+            return
+        }
+
+        val options = ImageCapture.OutputFileOptions.Builder(frames[index]).build()
+        capture.takePicture(options, mainExecutor, object : ImageCapture.OnImageSavedCallback {
+            override fun onImageSaved(output: ImageCapture.OutputFileResults) {
+                captureNext(index + 1)
+            }
+
+            override fun onError(exception: ImageCaptureException) {
+                android.util.Log.e("LumaProCamera", "Night frame $index failed", exception)
+                finish(false)
+            }
+        })
     }
+
     captureNext(0)
 }
 
