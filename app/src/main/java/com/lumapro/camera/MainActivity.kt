@@ -545,7 +545,11 @@ private fun LumaCameraScreen() {
                 },
                 onRawCapabilityChanged = { supported ->
                     rawJpegSupported = supported
-                    if (!supported) rawCaptureEnabled = false                },
+                    // Prefer the higher-bit-depth RAW source by default when the
+                    // active camera explicitly reports simultaneous RAW+JPEG support.
+                    // Users can still turn RAW + JPEG OFF in the Pro settings.
+                    rawCaptureEnabled = supported
+                },
                 onTapFocus = {
                     if (manualFocusEnabled) {
                         manualFocusEnabled = false
