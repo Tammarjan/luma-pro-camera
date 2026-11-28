@@ -33,13 +33,16 @@ jobs:
         with:
           gradle-version: "8.13"
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
+      # GitHub-hosted Ubuntu runners already include Android SDK command-line tools.
+      # Avoid android-actions/setup-android here: its implicit legacy "tools" install
+      # fails against current repositories where that obsolete package no longer exists.
       - name: Install Android SDK packages
+        env:
+          ANDROID_HOME: /usr/local/lib/android/sdk
+          ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
         run: |
+          yes | sdkmanager --licenses || true
           sdkmanager --install "platform-tools" "platforms;android-36" "build-tools;36.0.0"
-          yes | sdkmanager --licenses
 
       - name: Build debug APK
         run: gradle --no-daemon :app:assembleDebug
