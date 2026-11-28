@@ -251,17 +251,17 @@ private fun LumaCameraScreen() {
     var exposureMin by remember { mutableIntStateOf(0) }
     var exposureMax by remember { mutableIntStateOf(0) }
     var exposureIndex by remember { mutableIntStateOf(0) }
-    var liveBrightness by remember { mutableFloatStateOf(0.08f) }
-    var liveContrast by remember { mutableFloatStateOf(0.15f) }
-    var liveSaturation by remember { mutableFloatStateOf(0.05f) }
-    var liveWarmth by remember { mutableFloatStateOf(0.03f) }
-    var liveTint by remember { mutableFloatStateOf(0.05f) }
-    var liveDenoise by remember { mutableFloatStateOf(0.25f) }
-    var liveSharpening by remember { mutableFloatStateOf(0.40f) }
-    var liveClarity by remember { mutableFloatStateOf(0.12f) }
-    var liveTexture by remember { mutableFloatStateOf(0.20f) }
-    var liveHighlights by remember { mutableFloatStateOf(0.75f) }
-    var liveShadows by remember { mutableFloatStateOf(0.55f) }
+    var liveBrightness by remember { mutableFloatStateOf(0f) }
+    var liveContrast by remember { mutableFloatStateOf(0f) }
+    var liveSaturation by remember { mutableFloatStateOf(0f) }
+    var liveWarmth by remember { mutableFloatStateOf(0f) }
+    var liveTint by remember { mutableFloatStateOf(0f) }
+    var liveDenoise by remember { mutableFloatStateOf(0f) }
+    var liveSharpening by remember { mutableFloatStateOf(0f) }
+    var liveClarity by remember { mutableFloatStateOf(0f) }
+    var liveTexture by remember { mutableFloatStateOf(0f) }
+    var liveHighlights by remember { mutableFloatStateOf(0f) }
+    var liveShadows by remember { mutableFloatStateOf(0f) }
     var hdrMode by remember { mutableIntStateOf(0) } // 0=off, 1=HDR, 2=HDR+
     val hdrStrength = when (hdrMode) { 1 -> 0.30f; 2 -> 0.55f; else -> 0f }
     var selectedLiveLook by remember { mutableStateOf("STANDARD") }
@@ -2099,8 +2099,7 @@ private fun CameraPreview(
             Media3Effect(
                 context,
                 CameraEffect.PREVIEW or
-                    (if (videoMode) CameraEffect.VIDEO_CAPTURE else 0) or
-                    (if (rawCaptureEnabled) 0 else CameraEffect.IMAGE_CAPTURE),
+                    (if (videoMode) CameraEffect.VIDEO_CAPTURE else 0),
                 effectExecutor
             ) { error ->
                 android.util.Log.e("LumaProCamera", "Live GPU effect failed", error)
