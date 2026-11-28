@@ -10,10 +10,12 @@ android {
 
     defaultConfig {
         applicationId = "com.lumapro.camera"
-        minSdk = 26
-        targetSdk = 36
-        versionCode = 3
-        versionName = "1.1.0-camera"
+        minSdk = 29
+        targetSdk = 34
+        versionCode = 4
+        versionName = "1.2.0-native"
+
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     buildFeatures {

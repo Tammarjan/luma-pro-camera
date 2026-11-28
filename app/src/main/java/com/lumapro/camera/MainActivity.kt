@@ -312,7 +312,7 @@ private fun LumaCameraScreen() {
                 // CameraX session, including when RAW decoding fails.
                 cameraRestartToken++
                 result.onSuccess {
-                    Toast.makeText(context, "RAW developed: Pictures/Luma Pro Camera", Toast.LENGTH_LONG).show()
+                    Toast.makeText(context, "RAW developed: DCIM/Camera", Toast.LENGTH_LONG).show()
                 }.onFailure {
                     android.util.Log.e("LumaProCamera", "RAW development failed", it)
                     Toast.makeText(context, "RAW development failed: ${it.message ?: it.javaClass.simpleName}", Toast.LENGTH_LONG).show()
@@ -416,7 +416,7 @@ private fun LumaCameraScreen() {
                     }
                     haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                     Toast.makeText(context,
-                        if (success) if (nightMode) "Night photo saved to Pictures/Luma Pro Camera" else "Photo saved to Pictures/Luma Pro Camera"
+                        if (success) if (nightMode) "Night photo saved to DCIM/Camera" else "Photo saved to DCIM/Camera"
                         else "Capture failed. Try again.", Toast.LENGTH_SHORT).show()
                 }
                 if (nightMode && !videoMode) captureNightPhoto(context, capture, ContextCompat.getMainExecutor(context), complete)
@@ -1639,7 +1639,7 @@ private fun developDngToJpeg(
             put(MediaStore.Images.Media.DISPLAY_NAME, "Luma_RAW_Developed_$stamp.jpg")
             put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
-                put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/Luma Pro Camera")
+                put(MediaStore.Images.Media.RELATIVE_PATH, "DCIM/Camera")
             }
         }
         val outputUri = context.contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
@@ -1756,7 +1756,7 @@ private fun captureNightPhoto(
             put(MediaStore.Images.Media.DISPLAY_NAME, displayName)
             put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
             if (android.os.Build.VERSION.SDK_INT >= 29) {
-                put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/Luma Pro Camera")
+                put(MediaStore.Images.Media.RELATIVE_PATH, "DCIM/Camera")
             }
         }
         val uri = context.contentResolver.insert(
@@ -1908,7 +1908,7 @@ private fun capturePhoto(
         put(MediaStore.Images.Media.DISPLAY_NAME, fileName)
         put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
-            put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/Luma Pro Camera")
+            put(MediaStore.Images.Media.RELATIVE_PATH, "DCIM/Camera")
         }
     }
     val outputOptions = ImageCapture.OutputFileOptions.Builder(
@@ -1921,7 +1921,7 @@ private fun capturePhoto(
                 put(MediaStore.Images.Media.DISPLAY_NAME, fileName.removeSuffix(".jpg") + ".dng")
                 put(MediaStore.Images.Media.MIME_TYPE, "image/x-adobe-dng")
                 if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
-                    put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/Luma Pro Camera")
+                    put(MediaStore.Images.Media.RELATIVE_PATH, "DCIM/Camera")
                 }
             }
             val rawOptions = ImageCapture.OutputFileOptions.Builder(

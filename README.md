@@ -1,39 +1,58 @@
-# Luma Pro Camera
+# Luma Pro Camera — Native Android
 
-A native Android camera project focused on professional capture and a consistent live-view/still-photo rendering pipeline.
+Native Kotlin camera app built with Jetpack Compose, CameraX and Camera2 interop. The first delivery milestone focuses on a stable camera preview, high-quality JPEG capture and saving through Android MediaStore.
 
-## Current milestone
+## Target device and SDK
 
-- Native Kotlin + Jetpack Compose Android app.
-- CameraX live rear-camera preview.
-- JPEG still-photo capture using the highest-quality CameraX capture mode.
-- Rear/front camera switching where both lenses are available.
-- Exposure compensation control with per-camera range detection and graceful fallback when unsupported.
-- Manual ISO and shutter-speed controls on cameras advertising Android Camera2 MANUAL_SENSOR capability; otherwise the controls are clearly unavailable.
-- Manual lens-focus distance and auto-focus toggle on cameras exposing manual focus capability.
-- White-balance presets selected from the modes supported by the active camera.
-- Device-aware flash toggle for cameras with a flash unit.
-- 1× and 2× zoom presets, capped to the selected camera's reported zoom capability.
-- Captures are saved to the device's Pictures/Luma Pro Camera gallery folder on Android versions that support relative media paths.
-- Device-aware feature detection, manual controls, GPU color grading, DNG/RAW and HEIF are planned next milestones.
+- Tested target: Redmi 13C 4G (MediaTek Helio G85), Android 13/14 MIUI
+- Minimum Android: API 29 (Android 10)
+- Target Android: API 34
+- Compile SDK: API 36
+- JDK 17 / Gradle 8.13
 
-## Technology
+Camera hardware capabilities vary by device and firmware. RAW, manual sensor settings, 50MP streams, optical stabilization and OEM extensions are enabled only when the active camera advertises support.
 
-- Kotlin + Jetpack Compose
-- CameraX with Camera2 interop planned for manual sensor controls and hardware capability discovery
-- GPU image processing planned for live Lightroom-style adjustments
-- JPEG, DNG and HEIF output where supported by the device and Android APIs
+## Current implementation
 
-## Build
+- CameraX rear/front preview and camera switching.
+- JPEG capture using CameraX quality capture mode.
+- MediaStore photo saving to `DCIM/Camera` with Luma filename prefix.
+- Rear/front camera capability discovery and zoom/exposure controls.
+- Camera2 interop for supported high-quality still capture requests and manual sensor capabilities.
+- Video capture support with device-selected quality fallback.
+- Dark Compose camera UI, gallery and camera diagnostics.
+- Background image analysis for histogram, clipping and focus-peaking overlays.
+- Live image adjustments and RAW development features present in the existing app source; their visual and output quality must be verified on the target phone.
 
-The GitHub Actions workflow builds a debug APK on pushes to `main`. The APK is uploaded as the `luma-pro-camera-debug` workflow artifact when the build succeeds.
+## Build locally
 
-For a local build, use JDK 17, Android SDK 36 and Gradle 8.13, then run:
+1. Install Android Studio or Android command-line tools, JDK 17 and Android SDK 36.
+2. Open the repository in Android Studio and allow Gradle sync.
+3. Build with:
 
 ```bash
 gradle --no-daemon :app:assembleDebug
 ```
 
-## Compatibility
+4. Install `app/build/outputs/apk/debug/app-debug.apk` on the phone.
 
-“Universal” means the app adapts to capabilities exposed by each Android device. Not every phone supports every lens, manual sensor control, RAW mode or HEIF encoding.
+## GitHub Actions APK
+
+Every push to any branch and every pull request targeting `main` runs the Android debug build. When successful, open the repository's **Actions** tab, select the latest **Luma Pro Camera Android CI** run, and download the `luma-pro-camera-debug-<run>` artifact. The APK is a debug-signed installable test build; no release keystore is required.
+
+## Phone test checklist — milestone 1
+
+- Grant camera permission and confirm preview starts without a black screen.
+- Capture 10 photos in succession; confirm the shutter remains responsive.
+- Open Gallery and verify photos appear in `DCIM/Camera`.
+- Switch rear/front cameras and repeat a capture.
+- Lock/unlock the phone and return to the app; verify the preview recovers.
+- Check that denying microphone permission does not prevent photo capture.
+
+## Planned milestones
+
+1. Preview, capture, MediaStore save and device compatibility baseline.
+2. Live adjustments, applied-to-JPEG processing and preset persistence.
+3. Bounded-memory burst capture, alignment/merge and edge-preserving denoise.
+4. Pro controls, manual focus feedback, white balance and exposure lock.
+5. Portrait refinement, video stabilization checks, memory/performance tuning and device validation.
