@@ -303,7 +303,7 @@ private fun LumaCameraScreen() {
             rawDeveloping = true
             cameraScope.launch {
                 val result = withContext(Dispatchers.IO) {
-                    runCatching { developDngToJpeg(context, uri, liveDenoise, liveBrightness, liveContrast, liveSaturation, liveWarmth, liveTint, liveSharpening, liveClarity, liveTexture, liveHighlights, liveShadows) }
+                    runCatching { developDngToJpeg(context, uri, if (liveDenoise <= 0.001f) 0.65f else liveDenoise, liveBrightness, liveContrast, liveSaturation, liveWarmth, liveTint, liveSharpening, liveClarity, liveTexture, liveHighlights, liveShadows) }
                 }
                 rawDeveloping = false
                 // The system document picker backgrounds the Activity. Always recreate the
@@ -1361,7 +1361,7 @@ private fun setManualExposure(camera: Camera?, enabled: Boolean, iso: Int, shutt
 private fun applyChromaNoiseReduction(
     source: Bitmap,
     destination: Bitmap,
-    strength: Float = 0.55f,
+    strength: Float = 0.65f,
     sharpening: Float = 0f,
     clarity: Float = 0f,
     texture: Float = 0f,
@@ -1369,7 +1369,7 @@ private fun applyChromaNoiseReduction(
     shadows: Float = 0f
 ) {
     require(source.width == destination.width && source.height == destination.height)
-    require(source !== destination) { "Chroma filter requires separate source and destination bitmaps" }
+    require(source !== destination) { "RAW denoiser requires separate source and destination bitmaps" }
 
     val width = source.width
     val height = source.height
@@ -1377,19 +1377,21 @@ private fun applyChromaNoiseReduction(
     val middle = IntArray(width)
     val bottom = IntArray(width)
     val outputRow = IntArray(width)
-    val verticalCb = FloatArray(width)
-    val verticalCr = FloatArray(width)
-    val chromaAmount = strength.coerceIn(0f, 0.8f)
-    // Adaptive luminance denoising: smooths small sensor fluctuations in flat
-    // regions, but rejects neighbours across strong edges to retain fabric detail.
-    val lumaAmount = 0.38f
-    val lumaThreshold = 26f
+    val amount = strength.coerceIn(0f, 1f)
 
-    fun luminance(pixel: Int): Float {
-        val red = ((pixel ushr 16) and 0xff).toFloat()
-        val green = ((pixel ushr 8) and 0xff).toFloat()
-        val blue = (pixel and 0xff).toFloat()
-        return 0.299f * red + 0.587f * green + 0.114f * blue
+    // A 3x3 edge-aware bilateral pass reduces both luminance grain and chroma
+    // speckle. Unlike the previous fixed cross blur, every neighbour is weighted
+    // by its luminance similarity so strong edges are not averaged together.
+    val noiseSigma = 7f + amount * 20f
+    val lumaBlend = 0.20f + amount * 0.55f
+    val chromaBlend = 0.40f + amount * 0.48f
+    val sigmaSquared = noiseSigma * noiseSigma
+
+    fun luma(pixel: Int): Float {
+        val r = ((pixel ushr 16) and 0xff).toFloat()
+        val g = ((pixel ushr 8) and 0xff).toFloat()
+        val b = (pixel and 0xff).toFloat()
+        return 0.299f * r + 0.587f * g + 0.114f * b
     }
 
     source.getPixels(top, 0, width, 0, 0, width, 1)
@@ -1398,92 +1400,84 @@ private fun applyChromaNoiseReduction(
 
     for (y in 0 until height) {
         for (x in 0 until width) {
-            val p0 = top[x]
-            val p1 = middle[x]
-            val p2 = bottom[x]
-            val redSum = ((p0 ushr 16) and 0xff) + ((p1 ushr 16) and 0xff) + ((p2 ushr 16) and 0xff)
-            val greenSum = ((p0 ushr 8) and 0xff) + ((p1 ushr 8) and 0xff) + ((p2 ushr 8) and 0xff)
-            val blueSum = (p0 and 0xff) + (p1 and 0xff) + (p2 and 0xff)
-
-            verticalCb[x] = 384f - 0.168736f * redSum - 0.331264f * greenSum + 0.5f * blueSum
-            verticalCr[x] = 384f + 0.5f * redSum - 0.418688f * greenSum - 0.081312f * blueSum
-        }
-
-        for (x in 0 until width) {
             val center = middle[x]
             val alpha = (center ushr 24) and 0xff
-            val red = ((center ushr 16) and 0xff).toFloat()
-            val green = ((center ushr 8) and 0xff).toFloat()
-            val blue = (center and 0xff).toFloat()
+            val r = ((center ushr 16) and 0xff).toFloat()
+            val g = ((center ushr 8) and 0xff).toFloat()
+            val b = (center and 0xff).toFloat()
+            val centerY = 0.299f * r + 0.587f * g + 0.114f * b
+            val centerCb = 128f - 0.168736f * r - 0.331264f * g + 0.5f * b
+            val centerCr = 128f + 0.5f * r - 0.418688f * g - 0.081312f * b
+
+            var sumY = centerY * 2.5f
+            var sumCb = centerCb * 2.5f
+            var sumCr = centerCr * 2.5f
+            var sumWeight = 2.5f
+            var neighbourLuma = 0f
+            var neighbourCount = 0
+
+            fun addNeighbour(pixel: Int, spatialWeight: Float) {
+                val nr = ((pixel ushr 16) and 0xff).toFloat()
+                val ng = ((pixel ushr 8) and 0xff).toFloat()
+                val nb = (pixel and 0xff).toFloat()
+                val ny = 0.299f * nr + 0.587f * ng + 0.114f * nb
+                val diff = ny - centerY
+                val rangeWeight = 1f / (1f + (diff * diff / sigmaSquared))
+                val weight = spatialWeight * rangeWeight
+                sumY += ny * weight
+                sumCb += (128f - 0.168736f * nr - 0.331264f * ng + 0.5f * nb) * weight
+                sumCr += (128f + 0.5f * nr - 0.418688f * ng - 0.081312f * nb) * weight
+                sumWeight += weight
+                neighbourLuma += ny
+                neighbourCount++
+            }
 
             val left = (x - 1).coerceAtLeast(0)
             val right = (x + 1).coerceAtMost(width - 1)
-            val smoothCb = (verticalCb[left] + verticalCb[x] + verticalCb[right]) / 9f
-            val smoothCr = (verticalCr[left] + verticalCr[x] + verticalCr[right]) / 9f
-            val centerCb = 128f - 0.168736f * red - 0.331264f * green + 0.5f * blue
-            val centerCr = 128f + 0.5f * red - 0.418688f * green - 0.081312f * blue
-            val cb = centerCb + (smoothCb - centerCb) * chromaAmount
-            val cr = centerCr + (smoothCr - centerCr) * chromaAmount
+            addNeighbour(middle[left], 1.0f)
+            addNeighbour(middle[right], 1.0f)
+            addNeighbour(top[x], 1.0f)
+            addNeighbour(bottom[x], 1.0f)
+            addNeighbour(top[left], 0.70f)
+            addNeighbour(top[right], 0.70f)
+            addNeighbour(bottom[left], 0.70f)
+            addNeighbour(bottom[right], 0.70f)
 
-            // Cross-shaped edge-aware luma filter. Neighbours are only blended
-            // when their brightness is close enough to the centre pixel.
-            val centerLuma = 0.299f * red + 0.587f * green + 0.114f * blue
-            var lumaSum = centerLuma * 2f
-            var lumaWeight = 2f
-            // Avoid allocating a temporary array for every pixel. At 12MP,
-            // even tiny per-pixel allocations create heavy GC pressure and can
-            // cause pauses or out-of-memory failures on mid-range phones.
-            val leftLuma = luminance(middle[left])
-            if (kotlin.math.abs(leftLuma - centerLuma) <= lumaThreshold) {
-                lumaSum += leftLuma
-                lumaWeight += 1f
-            }
-            val rightLuma = luminance(middle[right])
-            if (kotlin.math.abs(rightLuma - centerLuma) <= lumaThreshold) {
-                lumaSum += rightLuma
-                lumaWeight += 1f
-            }
-            val topLuma = luminance(top[x])
-            if (kotlin.math.abs(topLuma - centerLuma) <= lumaThreshold) {
-                lumaSum += topLuma
-                lumaWeight += 1f
-            }
-            val bottomLuma = luminance(bottom[x])
-            if (kotlin.math.abs(bottomLuma - centerLuma) <= lumaThreshold) {
-                lumaSum += bottomLuma
-                lumaWeight += 1f
-            }
-            var filteredLuma = centerLuma + ((lumaSum / lumaWeight) - centerLuma) * lumaAmount
+            val averageY = sumY / sumWeight
+            val filteredY = centerY + (averageY - centerY) * lumaBlend
+            val filteredCb = centerCb + (sumCb / sumWeight - centerCb) * chromaBlend
+            val filteredCr = centerCr + (sumCr / sumWeight - centerCr) * chromaBlend
 
-            // Apply saved-photo detail controls in the RAW development pass.
-            // This lightweight edge-aware local contrast avoids allocating a
-            // second full-resolution pixel buffer on memory-limited phones.
-            val localAverage = (leftLuma + rightLuma + topLuma + bottomLuma) * 0.25f
-            val edgeDetail = centerLuma - localAverage
-            val detailAmount = (sharpening.coerceIn(0f, 1f) * 0.55f +
-                texture.coerceIn(0f, 1f) * 0.38f +
-                clarity.coerceIn(0f, 1f) * 0.28f).coerceAtMost(0.9f)
-            filteredLuma += edgeDetail * detailAmount
+            // Restore local edge detail after denoising, rather than sharpening
+            // the original noisy pixels before smoothing.
+            val localAverage = neighbourLuma / neighbourCount.coerceAtLeast(1)
+            val edgeDetail = centerY - localAverage
+            val detailAmount = (
+                sharpening.coerceIn(0f, 1f) * 0.48f +
+                texture.coerceIn(0f, 1f) * 0.24f +
+                clarity.coerceIn(0f, 1f) * 0.20f
+            ).coerceAtMost(0.72f)
+            var finalY = filteredY + edgeDetail * detailAmount
 
-            // Single-frame shadow/highlight shaping; cannot recover clipped sensor data.
-            val normalizedLuma = (filteredLuma / 255f).coerceIn(0f, 1f)
-            val shadowMask = 1f - ((normalizedLuma - 0.10f) / 0.62f).coerceIn(0f, 1f)
-            val highlightMask = ((normalizedLuma - 0.28f) / 0.64f).coerceIn(0f, 1f)
-            val shadowLift = shadowMask * shadows.coerceIn(0f, 1f) * 0.30f
-            val highlightPull = highlightMask * highlights.coerceIn(0f, 1f) * 0.28f
-            val mappedLuma = (normalizedLuma + shadowLift * (1f - normalizedLuma) -
-                highlightPull * normalizedLuma).coerceIn(0f, 1f)
-            val toneRatio = mappedLuma / normalizedLuma.coerceAtLeast(0.035f)
-            filteredLuma = (filteredLuma * toneRatio.coerceIn(0.55f, 1.55f)).coerceIn(0f, 255f)
+            // Restrained single-frame tone shaping. Clipped highlights cannot be
+            // reconstructed from one exposure; avoid aggressive shadow amplification.
+            val normalizedY = (finalY / 255f).coerceIn(0f, 1f)
+            val shadowMask = 1f - ((normalizedY - 0.08f) / 0.58f).coerceIn(0f, 1f)
+            val highlightMask = ((normalizedY - 0.34f) / 0.58f).coerceIn(0f, 1f)
+            val shadowLift = shadowMask * shadows.coerceIn(0f, 1f) * 0.18f
+            val highlightPull = highlightMask * highlights.coerceIn(0f, 1f) * 0.22f
+            val mappedY = (normalizedY + shadowLift * (1f - normalizedY) -
+                highlightPull * normalizedY).coerceIn(0f, 1f)
+            finalY = (mappedY * 255f).coerceIn(0f, 255f)
 
-            val outRed = (filteredLuma + 1.402f * (cr - 128f)).toInt().coerceIn(0, 255)
-            val outGreen = (filteredLuma - 0.344136f * (cb - 128f) - 0.714136f * (cr - 128f)).toInt().coerceIn(0, 255)
-            val outBlue = (filteredLuma + 1.772f * (cb - 128f)).toInt().coerceIn(0, 255)
-            outputRow[x] = (alpha shl 24) or (outRed shl 16) or (outGreen shl 8) or outBlue
+            val outR = (finalY + 1.402f * (filteredCr - 128f)).toInt().coerceIn(0, 255)
+            val outG = (finalY - 0.344136f * (filteredCb - 128f) -
+                0.714136f * (filteredCr - 128f)).toInt().coerceIn(0, 255)
+            val outB = (finalY + 1.772f * (filteredCb - 128f)).toInt().coerceIn(0, 255)
+            outputRow[x] = (alpha shl 24) or (outR shl 16) or (outG shl 8) or outB
         }
 
         destination.setPixels(outputRow, 0, width, 0, y, width, 1)
-
         if (y < height - 1) {
             System.arraycopy(middle, 0, top, 0, width)
             System.arraycopy(bottom, 0, middle, 0, width)
@@ -1545,7 +1539,9 @@ private fun developDngToJpeg(
             // Keep a modest pre-demosaic lift and highlight preservation; disabling
             // auto-brightness was the main reason developed frames stayed too dark.
             raw.setAutoBrightness(true)
-            raw.setExposureCorrectionBeforeDemosaic(true, 1.45f, 0.85f)
+            // Do not apply a second 1.45x lift before demosaicing: at ISO 12800
+            // it magnifies sensor grain before the adaptive denoising pass.
+            raw.setExposureCorrectionBeforeDemosaic(false, 1.0f, 0.85f)
             raw.setHighlightMode(2)
             raw.setFbddNoiseReduction(2)
             // AndroidLibRaw 2.0.7 returns a HARDWARE bitmap from decodeBitmap()
